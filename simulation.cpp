@@ -27,9 +27,9 @@
 #define INTROHOT 4 //Communication with the edge and other edge and store only intro
 
 
-#define NUMBEROFCUSTOMER 10000 //Number of customers
+#define NUMBEROFCUSTOMER 10 //Number of customers
 #define EDGENUM 1 //Number of edges
-#define EDGEVOLUME 400// volume of edges (e.g.1TB:800Mbit)
+#define EDGEVOLUME 300// volume of edges (e.g.1TB:800Mbit)
 
 #define MOVIENUM 5 //Number of movies
 #define MOVIELENGTH 60 //Video length
@@ -193,8 +193,11 @@ class Storage{
 	void add_writeTime(double time){ writeTime+=time; }
 	double get_writeTime(){ return writeTime; }
 
-	void add_firstWaitTime(double time){ writeTime+=time; }
-	double get_firstWaitTime(){ return writeTime; }
+	void add_firstWaitTime(double time){ 
+		firstWaitTime+=time; 
+		std::cout << time<<"\n";
+	}
+	double get_firstWaitTime(){ return firstWaitTime; }
 };
 
 
@@ -205,13 +208,14 @@ struct event{
 	int where[2];//The nearest edge number
 	int state[2];//cold -3~-1, hot 1~4 :: edge-client 1, edges or cloud-edge 0
 	int eventID;//arrival start finish   1 2 3 
-	int startTime;
+	double startTime;
 	struct event* next;
 	struct node* node;
 };
 
 struct media{
 	double bandWidth;
+	double writePowerConsumption;
 	double readPowerConsumption;
 	double idlePowerConsumption;
 	double price;
@@ -355,7 +359,7 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 	int removie = -1;
 	int flag = 0;
 	
-    printf("movieID%d edge%d volume %.0f from%d \n",movieID,where[0],hot[where[0]].get_volume(),where[1]);
+    printf("movieID%d edge%d volume %.0f from%d\n",movieID,where[0],hot[where[0]].get_volume(),where[1]);
 
 	//他のエッジからpieceを取得
 	if(where[0] != where[1] && where[1] != COLD){
@@ -365,17 +369,17 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 				hot[where[1]].add_read_data(MOVIEPIECESIZE*bitRate);
 				hot[where[0]].add_write_data(MOVIEPIECESIZE*bitRate);
 				hot[where[0]].add_volume(MOVIEPIECESIZE*bitRate);
-				for(int i = hot[TopEvent->where[0]].get_watchingcnt(movieID,nodeID); i>0; i--){//その動画を取っているエッジ間通信を全て削除
-					hot[where[1]].delete_numOfEdgeRequest(1);
-					hot[where[1]].delete_watchingcnt(movieID,nodeID);
-				}
-				hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[0]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
+				
+				hot[where[1]].delete_numOfEdgeRequest(1);//その動画を取っているエッジ間通信を削除
+				hot[where[1]].delete_watchingcnt(movieID,nodeID);
+				
+				hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[1]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
 				storeTime[where[0]][movieID][nodeID] = time;
 				return OTHERHOT;
         }else{
 			for(int i=LASTPIECE-1; i>=0; i++){
             	for(int j=0; j<MOVIENUM; j++){//lfu実行
-                	if(usedcnt[where[0]][j]<least && hot[where[0]].get_watchingcnt(j,i) == 0){
+                	if(usedcnt[where[0]][j]<least && hot[where[0]].get_watchingcnt(j,i) == 0 && storeTime[where[0]][j][i] != 0 ){
 						least=usedcnt[where[0]][j];
 						removie=j;
 						renode=i;
@@ -389,17 +393,17 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 					hot[where[0]].set_moviePiece(movieID,nodeID);
 					hot[where[1]].add_read_data(MOVIEPIECESIZE*bitRate);
 					hot[where[0]].add_write_data(MOVIEPIECESIZE*bitRate);
-					for(int i = hot[TopEvent->where[0]].get_watchingcnt(movieID,nodeID); i>0; i--){//そのpieceを取っているエッジ間通信を全て削除
-						hot[where[1]].delete_numOfEdgeRequest(1);
-						hot[where[1]].delete_watchingcnt(movieID,nodeID);
-					}
-					hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[0]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
+					
+					hot[where[1]].delete_numOfEdgeRequest(1);//そのpieceを取っているエッジ間通信を全て削除
+					hot[where[1]].delete_watchingcnt(movieID,nodeID);
+					
+					hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[1]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
 					storeTime[where[0]][removie][renode] = 0;
 					storeTime[where[0]][movieID][nodeID] = time;
 					return OTHERHOT;
 
 				}else{
-					printf("edge%d gets movieID%d nodeID%d from directly edge%d",where[0],movieID,nodeID,where[1]);
+					printf("edge%d gets movieID%d nodeID%d from directly edge%d\n",where[0],movieID,nodeID,where[1]);
 					hot[where[1]].add_read_data(MOVIEPIECESIZE*bitRate);
 					hot[where[1]].delete_watchingcnt(movieID,nodeID);
 					return OTHERHOT;
@@ -414,17 +418,17 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 				cold.add_read_data(MOVIEPIECESIZE*bitRate);
 				hot[where[0]].add_write_data(MOVIEPIECESIZE*bitRate);
 				hot[where[0]].add_volume(MOVIEPIECESIZE*bitRate);
-				for(int i = hot[where[0]].get_watchingcnt(movieID,nodeID); i>0; i--){//その動画を取っているクラウドエッジ間通信を全て削除
-					cold.delete_numOfRequest(1);
-					cold.delete_watchingcnt(movieID,nodeID);
-				}
-				hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[0]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
+				
+				cold.delete_numOfRequest(1);//その動画を取っているクラウドエッジ間通信を削除
+				cold.delete_watchingcnt(movieID,nodeID);
+				
+				hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,cold.get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
 				storeTime[where[0]][movieID][nodeID] = time;
 				return COLD;
         }else{
 			for(int i=LASTPIECE-1; i>=0; i++){
             	for(int j=0; j<MOVIENUM; j++){//lfu実行
-                	if(usedcnt[where[0]][j]<least && hot[where[0]].get_watchingcnt(j,i) == 0){
+                	if(usedcnt[where[0]][j]<least && hot[where[0]].get_watchingcnt(j,i) == 0 && storeTime[where[0]][j][i] != 0 ){
 						least=usedcnt[where[0]][j];
 						removie=j;
 						renode=i;
@@ -438,17 +442,17 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 					hot[where[0]].set_moviePiece(movieID,nodeID);
 					cold.add_read_data(MOVIEPIECESIZE*bitRate);
 					hot[where[0]].add_write_data(MOVIEPIECESIZE*bitRate);
-					for(int i = hot[where[0]].get_watchingcnt(movieID,nodeID); i>0; i--){//そのpieceを取っているエッジ間通信を全て削除
-						cold.delete_numOfRequest(1);
-						cold.delete_watchingcnt(movieID,nodeID);
-					}
-					hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,hot[where[0]].get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
+					
+					cold.delete_numOfRequest(1);//そのpieceを取っているエッジ間通信を全て削除
+					cold.delete_watchingcnt(movieID,nodeID);
+					
+					hot[where[0]].set_tmpWatchingcnt(movieID,nodeID,cold.get_watchingcnt(movieID,nodeID));//そのpieceを待っている人数を保存
 					storeTime[where[0]][removie][renode] = 0;
 					storeTime[where[0]][movieID][nodeID] = time;
 					return COLD;
 
 				}else{
-					printf("edge%d gets movieID%d nodeID%d from directly cold",where[0],movieID,nodeID);
+					printf("edge%d gets movieID%d nodeID%d from directly cold\n",where[0],movieID,nodeID);
 					cold.add_read_data(MOVIEPIECESIZE*bitRate);
 					cold.delete_watchingcnt(movieID,nodeID);
 					return COLD;
@@ -461,8 +465,8 @@ int lfu(double time, int where[2], int movieID, int nodeID, double bitRate) {
 
 
 void EvaluatePowerConsumption(struct media media[]);
-void EvaluateRatioOfEdge(void);
-void EvaluateCost(struct media media[]);
+void EvaluateAverageWaitingTime(void);
+void EvaluateInitialCost(struct media media[]);
 void EventParser();
 void Initialize();
 void Simulation();
@@ -476,13 +480,17 @@ double RequestOnRand(int);
 int main(int argc, char* argv[])
 {	
 	struct media media[MEDIANUM] =  {//transfer Rate,Read,Idle,Price
-								{250*8,8,3,5000},//HDD
-								{500*8,3,2,10000},//SSD
-								{200*8,8,0.4,2000}//Disc
+								{250*8,8,8,3,5000},//HDD
+								{500*8,4,3,2,10000},//SSD
+								{200*8,15,8,0.4,2000}//Disc
 								};//media
-	lambda = 0.1;
+	srand(1);
+	lambda = 100;
 	//int simulationTime = 4*60*60;
 	Simulation();
+	EvaluateAverageWaitingTime();
+	EvaluatePowerConsumption(media);
+	EvaluateInitialCost(media);
 	//EvaluateRatioOfEdge();//ratio of first length of movie
 	//EvaluatePowerConsumption(media);//all power consumption
 	//EvaluateCost(media);//cost
@@ -493,57 +501,55 @@ int main(int argc, char* argv[])
 ///////////////////////////////////////////////////////////////////            EVALUATE              ///////////////////////////////////////////////////////////////////////////////////////////
 
 
-void EvaluateRatioOfEdge() 
-{
-	double latencyECL;//between Edge and Client
-	double allMovieData = 800*8;//movie data size (ex.150MB)
-	double EdgeMovieData;
-	double bandWidthCCL;//between Cloud and Client
-	lambda =0.1;
-	int i,j;
-
-	bandWidthCE = 11*8;//(ex.HDD 170MB/s)
-	bandWidthECL = 500*8;//(ex.SSD 1940MB/s) not change
-	bandWidthCCL = bandWidthCE + bandWidthECL;
-
-	//Simulation(lambda,NUMBEROFCUSTOMER);//start simulation
+void EvaluateAverageWaitingTime() {
+	double firstWaitTime=0;
+	int numOfCustomer=0;
+	double averageWaitTime;
 	
-	for(j=0;j<BITRATENUM;j++)
-	{
-		EdgeMovieData = allMovieData*bitRate[j]*bandWidthECL / ( bitRate[j]*(bandWidthCCL) + bandWidthCCL );	
-		latencyECL = EdgeMovieData/bandWidthECL + EdgeMovieData/bitRate[j];
-		printf("All Movie Data Size %.0lfMB coldmedia %.0lfMB/s Hotmedia %.0lfMB/s bitRate %.1lfMb/s EdgeMovieData %lf%% \n",allMovieData/8,bandWidthCE/8,bandWidthECL/8, bitRate[j],EdgeMovieData/allMovieData*100);
+	for(int i =0; i<EDGENUM; i++){
+		firstWaitTime += hot[i].get_firstWaitTime();
+		numOfCustomer += hot[i].get_sumClient();
 	}
+	
+	averageWaitTime = firstWaitTime / numOfCustomer;
+	std::cout<<"num"<<numOfCustomer<< " averageWaitTime" << averageWaitTime<<"\n";
+
 }
 
-void EvaluatePowerConsumption(struct media media[])
-{
-	int i;
+void EvaluatePowerConsumption(struct media media[]){
 	double ratioOfRead = 0.8;
+	double cloudRead=0;
+	double cloudIdle=0;
+	double edgeWrite=0;
+	double edgeRead=0;
+	double edgeIdle=0;
+	double finalTime=0;
 	double powerConsumption;
 
-	for(i=0;i<MEDIANUM;i++)
-	{
-		powerConsumption = media[i].readPowerConsumption * ratioOfRead + media[i].idlePowerConsumption * (1-ratioOfRead);
-		printf("averagePowerConsumption %lfW\n",powerConsumption);
+	finalTime = simtime;
+
+	cloudRead = cold.get_sum_readData() / media[0].bandWidth;
+	cloudIdle = simtime - cloudRead;
+
+	for(int i=0; i<EDGENUM; i++){
+		edgeRead += hot[i].get_sum_readData() / media[1].bandWidth;
+		edgeWrite += hot[i].get_sum_writeData() / media[1].bandWidth;
+		edgeIdle += simtime - edgeRead - edgeWrite;
 	}
+	powerConsumption = cloudIdle*media[0].idlePowerConsumption + cloudRead*media[0].readPowerConsumption + edgeIdle*media[1].idlePowerConsumption + edgeRead*media[1].readPowerConsumption + edgeWrite*media[1].writePowerConsumption;
+	std::cout<< "powerConsumption "<<powerConsumption<<" cloudIdle"<<cloudIdle<< " cloudRead "<<cloudRead<< " edgeIdle "<< edgeIdle<< " Read "<<edgeRead<< " Write " << edgeWrite<<"\n";
 }
 
-void EvaluateCost(struct media media[])
-{
+void EvaluateInitialCost(struct media media[]){
 	int i,j,cost;
-	int hotmediaPrice,coldmediaPrice;
+	int hotMediaPrice,coldMediaPrice;
 	int power,powerPrice;
 
-	for(i=0;i<MEDIANUM;i++)
-	{
-		for(j=0;j<MEDIANUM;i++)
-		{
-			hotmediaPrice = media[i].price;
-			coldmediaPrice = media[j].price;
-			cost = hotmediaPrice + coldmediaPrice + power * 24 * 365 * powerPrice;
-		}
-	}
+	hotMediaPrice = media[0].price;//HDDの価格
+	coldMediaPrice = media[1].price;//SSDの価格
+
+	cost = EDGENUM*EDGEVOLUME*hotMediaPrice/1000 + MOVIELENGTH*MOVIENUM*bitRate[3]*coldMediaPrice/1000;
+	std::cout<<"cost " << (int)cost << "円 edgeCost "<< (int)(EDGENUM*EDGEVOLUME*hotMediaPrice/1000) << "円　coldCost "<< (int)(MOVIELENGTH*MOVIENUM*bitRate[3]*coldMediaPrice/1000)<<"円";
 }
 
 
@@ -854,11 +860,15 @@ void ExecuteRequestMovie(){//intro部分の通信
 		}
 		TopEvent->node->NodeID += 1;
 		TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
+		simtime=time;
+		return;
 
 	}else if(state[0] == OTHERHOT) {//他のエッジからデータを取ってくる
 		if(state[1]) {//1番目
-			hot[where[1]].add_numOfEdgeRequest(1);//エッジ間通信
-			hot[where[1]].add_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID);//取ってくる先のpieceを視聴中にする
+			if(hot[where[1]].get_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID) == 0) {
+				hot[where[1]].add_numOfEdgeRequest(1);//エッジ間通信
+				hot[where[1]].add_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID);//取ってくる先のpieceを視聴中にする
+			}
 			time = TopEvent->time + EdgeMovieData/hot[where[1]].get_edge_bandWidth();
 			if(TopEvent->node->NodeID == 0) {
 				hot[where[0]].add_all_watchingcnt(TopEvent->node->movieID, TopEvent->node->NodeID);//視聴中
@@ -867,14 +877,20 @@ void ExecuteRequestMovie(){//intro部分の通信
 
 			state[1] = 0;//エッジ間通信flag
 			TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
+			return;
 
 		}else {//3番目
 			if(backFlag) {//すでにpieceが保存されていた
 				time = TopEvent->time + EdgeMovieData/hot[where[0]].get_request_bandWidth();//エッジクライアント間通信
+				if(TopEvent->node->NodeID == 0){
+					hot[where[0]].add_firstWaitTime(time - TopEvent->startTime);//動画を見始めるまでの時間
+					hot[where[0]].add_client_num(1);//そのエッジから動画を取得したクライアントの人数
+				}
 				TopEvent->node->NodeID += 1;
 				state[1] = 1;
 				TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
-				
+				simtime=time;
+				return;
 					
 			}else{//一番近いエッジにはまだpieceが保存されていない
 				for(int i = hot[where[0]].get_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID); i>0; i--){
@@ -882,16 +898,24 @@ void ExecuteRequestMovie(){//intro部分の通信
 				}		
 				waitingFlag[where[0]][TopEvent->node->movieID][TopEvent->node->NodeID]=1;
 				time = TopEvent->time + EdgeMovieData/hot[where[0]].get_request_bandWidth();//エッジクライアント間通信
+				if(TopEvent->node->NodeID == 0){
+					hot[where[0]].add_firstWaitTime(time - TopEvent->startTime);//動画を見始めるまでの時間
+					hot[where[0]].add_client_num(1);//そのエッジから動画を取得したクライアントの人数
+				}
 				TopEvent->node->NodeID += 1;
 				state[1] = 1;
 				TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
+				simtime=time;
+				return;
 			}
 		}
 
 	}else if(state[0] == COLD) {//クラウドからデータを取ってくる
 		if(state[1]) {//1番目
-			cold.add_numOfRequest(1);//クラウドエッジ間通信
-			cold.add_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID);//取ってくる先のpieceを視聴中にする
+			if(cold.get_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID)==0){
+				cold.add_numOfRequest(1);//クラウドエッジ間通信
+				cold.add_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID);//取ってくる先のpieceを視聴中にする
+			}
 			time = TopEvent->time + EdgeMovieData/cold.get_request_bandWidth();
 			if(TopEvent->node->NodeID == 0) {
 				hot[where[0]].add_all_watchingcnt(TopEvent->node->movieID, TopEvent->node->NodeID);//視聴中
@@ -905,9 +929,15 @@ void ExecuteRequestMovie(){//intro部分の通信
 		}else {//3番目
 			if(backFlag) {//すでにpieceが保存されていた
 				time = TopEvent->time + EdgeMovieData/hot[where[0]].get_request_bandWidth();//エッジクライアント間通信
+				if(TopEvent->node->NodeID == 0){
+					hot[where[0]].add_firstWaitTime(time - TopEvent->startTime);//動画を見始めるまでの時間
+					hot[where[0]].add_client_num(1);//そのエッジから動画を取得したクライアントの人数
+				}
 				TopEvent->node->NodeID += 1;
 				state[1] = 1;
 				TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
+				simtime=time;
+				return;
 					
 			}else{//一番近いエッジにはまだpieceが保存されていない
 				for(int i = hot[where[0]].get_watchingcnt(TopEvent->node->movieID,TopEvent->node->NodeID); i>0; i--){
@@ -915,9 +945,15 @@ void ExecuteRequestMovie(){//intro部分の通信
 				}		
 				waitingFlag[where[0]][TopEvent->node->movieID][TopEvent->node->NodeID]=1;
 				time = TopEvent->time + EdgeMovieData/hot[where[0]].get_request_bandWidth();//エッジクライアント間通信
+				if(TopEvent->node->NodeID == 0){
+					hot[where[0]].add_firstWaitTime(time - TopEvent->startTime);//動画を見始めるまでの時間
+					hot[where[0]].add_client_num(1);//そのエッジから動画を取得したクライアントの人数
+				}
 				TopEvent->node->NodeID += 1;
 				state[1] = 1;
 				TopEvent = AddEvent(time,TopEvent->startTime,TopEvent->clientID,where,state,type,TopEvent->node)->next;
+				simtime=time;
+				return;
 			}
 		}
 
