@@ -1,6 +1,5 @@
-﻿#define _CRT_SECURE_NO_WARNINGS
-#pragma warning(disable:4100)
-#include "stdio.h"
+﻿#pragma warning(disable:4100)
+#include <stdio.h>
 #include "stdlib.h"
 #include "math.h"
 #include <string.h>
@@ -11,7 +10,7 @@
 #define MAXNUMEDGENODES 10
 #define MAXNUMCLIENTNODES 1000000 //2147483647/96 22369621くらいまでいける
 #define MAXNUMVIDEOS 100001
-#define MAXHOTCACHE 1000
+#define MAXHOTCACHE 5000
 #define MAXNUMPIECES 1000
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -155,6 +154,8 @@ double TotalCloudEdgeWriteBytes;
 double TotalCloudEdgeReadBytes;
 int Seed;
 
+int ccc;
+
 double NormalRand() {
 	//ボックスミュラー法
 	double r, r1, r2;
@@ -202,8 +203,8 @@ double ClientOnRand() {
 
 FILE* myfopen(const char* fname, const char* fmode) {
 	FILE* fp;
-	//fp = fopen(fname, fmode);
-	fopen_s(&fp, fname, fmode);
+	fp = fopen(fname, fmode);
+	//fopen_s(&fp, fname, fmode);
 	return fp;
 }
 
@@ -222,19 +223,19 @@ void Finalize() {
 	TotalCloudEdgeWriteBytes = 0.0;
 	TotalCloudEdgeReadBytes = CloudNode.CloudEdgeReadBytes;
 	for (i = 0; i < NumEdges;i++) {
-		TotalEdgeClientReadBytes += EdgeNodes[i].EdgeClientReadBytes; 
-		TotalEdgeEdgeWriteBytes += EdgeNodes[i].EdgeEdgeWriteBytes;
-		TotalEdgeEdgeReadBytes += EdgeNodes[i].EdgeEdgeReadBytes;
-		TotalCloudEdgeWriteBytes +=EdgeNodes[i].CloudEdgeWriteBytes;
+		TotalEdgeClientReadBytes += EdgeNodes[i].EdgeClientReadBytes;//edgeのRead クライアントから要求された量
+		TotalEdgeEdgeWriteBytes += EdgeNodes[i].EdgeEdgeWriteBytes;//edgeのWrite　他のedgeから書き込んだ量
+		TotalEdgeEdgeReadBytes += EdgeNodes[i].EdgeEdgeReadBytes;//edgeのread 他のedgeから要求された量
+		TotalCloudEdgeWriteBytes += EdgeNodes[i].CloudEdgeWriteBytes;//edgeのwrite　クラウドから書き込まれた量
 	}
 
-	while (TopEvent) {
+	while (TopEvent) {//全てのイベントを消去
 		CurrentEvent = TopEvent;
 		TopEvent = TopEvent->Next;
 		delete CurrentEvent;
 	}
 
-	for (i = 0; i < NumClients; i++) {
+	for (i = 0; i < NumClients; i++) {//全てのinterruptsを消去
 		while (ClientNodes[i].Interrupts) {
 			CurrentInterrupt = ClientNodes[i].Interrupts;
 			ClientNodes[i].Interrupts = CurrentInterrupt->Next;
@@ -242,23 +243,23 @@ void Finalize() {
 		}
 	}
 	for (i = 0; i < NumEdges; i++) {
-		while (EdgeNodes[i].EdgeEdgeWaitingList) {
+		while (EdgeNodes[i].EdgeEdgeWaitingList) {//edge間waitingListの消去
 			CurrentList = EdgeNodes[i].EdgeEdgeWaitingList;
 			EdgeNodes[i].EdgeEdgeWaitingList = CurrentList->Next;
 			delete CurrentList;
 		}
-		while (EdgeNodes[i].EdgeClientWaitingList) {
+		while (EdgeNodes[i].EdgeClientWaitingList) {//edge　client間waitingListの消去
 			CurrentList = EdgeNodes[i].EdgeClientWaitingList;
 			EdgeNodes[i].EdgeClientWaitingList = CurrentList->Next;
 			delete CurrentList;
 		}
-		while (EdgeNodes[i].OnClientList) {
+		while (EdgeNodes[i].OnClientList) {//clientListの消去
 			CurrentList = EdgeNodes[i].OnClientList;
 			EdgeNodes[i].OnClientList = CurrentList->Next;
 			delete CurrentList;
 		}
 	}
-	while (CloudNode.CloudEdgeWaitingList) {
+	while (CloudNode.CloudEdgeWaitingList) {//cloud edge間waitingListの消去
 		CurrentList = CloudNode.CloudEdgeWaitingList;
 		CloudNode.CloudEdgeWaitingList = CurrentList->Next;
 		delete CurrentList;
@@ -277,14 +278,14 @@ struct event* AddEvent(double Time, char EventID, struct clientnode* ClientNode,
 	struct event* NewEvent;
 
 	NewEvent = new struct event;
-	NewEvent->EventID = EventID;
-	NewEvent->EventNum = NextEventNum++;
-	NewEvent->ClientNode= ClientNode;
-	NewEvent->Time = Time;
-	NewEvent->Data1 = Data1;
-	NewEvent->Data2 = Data2;
+	NewEvent->EventID = EventID;//eventの状態
+	NewEvent->EventNum = NextEventNum++;//？
+	NewEvent->ClientNode= ClientNode;//clientの読みこみ
+	NewEvent->Time = Time;//時間
+	NewEvent->Data1 = Data1;//pieceID
+	NewEvent->Data2 = Data2;//cached true false
 
-	if (TopEvent == NULL) {
+	if (TopEvent == NULL) {//初期の場合
 		TopEvent = NewEvent;
 		TopEvent->Next = NULL;
 		return NewEvent;
@@ -293,34 +294,34 @@ struct event* AddEvent(double Time, char EventID, struct clientnode* ClientNode,
 	PreviousEvent = NULL;
 	CurrentEvent = TopEvent;
 	while (CurrentEvent) {
-		if ((CurrentEvent->Time > NewEvent->Time) ||
-			((CurrentEvent->Time == NewEvent->Time) && (CurrentEvent->EventID > NewEvent->EventID))) {
+		if ((CurrentEvent->Time > NewEvent->Time) ||//追加するEventの方が前の時間
+			((CurrentEvent->Time == NewEvent->Time) && (CurrentEvent->EventID > NewEvent->EventID))) {//同時間で新しいEventの方が段階が低い
 			NewEvent->Next = CurrentEvent;
 			if (PreviousEvent == NULL) {
-				printf("AddEvent Error\n");
+				printf("AddEvent Error\n");//永遠に追加されるEventが先頭になる
 			}
 			else {
 				PreviousEvent->Next = NewEvent;
 			}
 			return NewEvent;
 		}
-		PreviousEvent = CurrentEvent;
-		CurrentEvent = CurrentEvent->Next;
+		PreviousEvent = CurrentEvent;//次を見る
+		CurrentEvent = CurrentEvent->Next;//次を見る
 	}
 	PreviousEvent->Next = NewEvent;
 	NewEvent->Next = CurrentEvent;//CurrentEvent=NULL
 	return NewEvent;
 }
-void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {
+void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//clientの通信終了
 	struct edgenode* EdgeNode = ClientNode->ConnectedEdgeNode;
 	struct clientnodelist* CurrentClientList;
 	struct clientnodelist* DeleteClientList;
 
-	NumReceivingClients--;
-	NumReceivedClients++;
+	NumReceivingClients--;//取得中
+	NumReceivedClients++;//取得終了
 	ClientNode->State |= RECEIVEDSTATE;
 
-	if (EdgeNode->OnClientList->ClientNode == ClientNode) {
+	if (EdgeNode->OnClientList->ClientNode == ClientNode) {//引数でもらったclientの処理待ちを消す(Top)
 		DeleteClientList = EdgeNode->OnClientList;
 		EdgeNode->OnClientList = EdgeNode->OnClientList->Next;
 		delete DeleteClientList;
@@ -336,18 +337,18 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {
 		}
 	}
 
-	LastSumInterruptDuration= ClientNode->SumInterruptDuration;
-	AverageInterruptDuration += ClientNode->SumInterruptDuration;
-	AverageNumInterrupt += ClientNode->NumInterrupt;
+	LastSumInterruptDuration= ClientNode->SumInterruptDuration;//そのクライアントの遅延時間
+	AverageInterruptDuration += ClientNode->SumInterruptDuration;//全てのクライアントの遅延時間
+	AverageNumInterrupt += ClientNode->NumInterrupt;//全てのクライアントの遅延回数
 	if (MaximumInterruptDuration < ClientNode->SumInterruptDuration)
-		MaximumInterruptDuration = ClientNode->SumInterruptDuration;
+		MaximumInterruptDuration = ClientNode->SumInterruptDuration;//最大遅延時間
 	if (ClientNode->SumInterruptDuration < MinimumInterruptDuration)
-		MinimumInterruptDuration = ClientNode->SumInterruptDuration;
+		MinimumInterruptDuration = ClientNode->SumInterruptDuration;//最小遅延時間
 }
 
 
 void EdgeClientWaiting(double EventTime, struct edgenode* EdgeNode) {
-	struct clientnodelist* WaitingList = EdgeNode->EdgeClientWaitingList;
+	struct clientnodelist* WaitingList = EdgeNode->EdgeClientWaitingList;//edgeのclient waitingList
 	struct clientnode* ClientNode;
 	double Bandwidth, FinishTime, r;
 	int PieceID;
@@ -355,15 +356,15 @@ void EdgeClientWaiting(double EventTime, struct edgenode* EdgeNode) {
 
 	if (WaitingList !=NULL) {
 		ClientNode = WaitingList->ClientNode;
-		if (0 <= WaitingList->PieceID) {
+		if (0 <= WaitingList->PieceID) {//cacheあり
 			Cached = true;
 			PieceID = WaitingList->PieceID;
 		}
-		else if (WaitingList->PieceID == -NumPieces) {
+		else if (WaitingList->PieceID == -NumPieces) {//cacheなし
 			Cached = false;
 			PieceID = 0;
 		}
-		else {
+		else {//cacheなし
 			Cached = false;
 			PieceID = -(WaitingList->PieceID);
 		}
@@ -505,7 +506,7 @@ bool VoteHotCache(struct clientnode* ClientNode, int Fetch) {
 	int EdgeClientSearchPieceID=0, EdgeEdgeSearchPieceID=0, CloudEdgeSearchPieceID=0;
 	bool Twice=false;
 
-	if (ConnectedEdgeNode->HotCacheStart == -1) {
+	if (ConnectedEdgeNode->HotCacheStart == -1) {//一番近いedgeに何もキャッシュされていない
 		return false;
 	}
 
@@ -677,8 +678,8 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 	struct edgenode* ConnectedEdgeNode = ClientNode->ConnectedEdgeNode;
 	struct clientnodelist* WaitingList;
 
-	if (SearchPieceID < NumPrePieces) {
-		if (ConnectedEdgeNode->State & EDGEEDGERECEIVESTATE) {
+	if (SearchPieceID < NumPrePieces) {//探しているpieceをどれだけ他のエッジからとってくるか
+		if (ConnectedEdgeNode->State & EDGEEDGERECEIVESTATE) {//1番近いエッジが他のエッジから受信中のpieceが探しているpiece
 			if ((ConnectedEdgeNode->EdgeEdgeReceiveVideoID == VideoID)
 				&& (ConnectedEdgeNode->EdgeEdgeReceivePieceID == SearchPieceID)) {
 				return true;
@@ -686,7 +687,7 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 		}
 
 		WaitingList = ClientNode->VideoEdgeNode->EdgeEdgeWaitingList;
-		while (WaitingList != NULL) {
+		while (WaitingList != NULL) {//videoがキャッシュされるエッジがクラウドから受信中のpieceが探しているpiece
 			if ((WaitingList->ClientNode->ConnectedEdgeNode==ConnectedEdgeNode)
 				&& (WaitingList->ClientNode->VideoID == VideoID)
 				&& (WaitingList->PieceID == SearchPieceID)) {
@@ -696,7 +697,7 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 		}
 	}
 	else {
-		if (ConnectedEdgeNode->State & CLOUDEDGERECEIVESTATE) {
+		if (ConnectedEdgeNode->State & CLOUDEDGERECEIVESTATE) {//1番近いエッジがクラウドから受信中のpieceが探しているpiece
 			if ((ConnectedEdgeNode->CloudEdgeReceiveVideoID == VideoID)
 				&& (ConnectedEdgeNode->CloudEdgeReceivePieceID == SearchPieceID)) {
 				return true;
@@ -704,7 +705,7 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 		}
 
 		WaitingList = CloudNode.CloudEdgeWaitingList;
-		while (WaitingList != NULL) {
+		while (WaitingList != NULL) {//一番近いエッジに探しているpieceを送っているかどうか
 			if ((WaitingList->ClientNode->ConnectedEdgeNode==ConnectedEdgeNode)
 				&&(WaitingList->ClientNode->VideoID == VideoID)
 				&& (WaitingList->PieceID == SearchPieceID)) {
@@ -722,13 +723,13 @@ void CloudEdgeRequest(double EventTime, struct clientnode* ClientNode, int Reque
 	struct clientnodelist* WaitingList;
 	struct clientnodelist* CurrentList;
 
-	if (CloudNode.State & CLOUDEDGESENDSTATE) {
+	if (CloudNode.State & CLOUDEDGESENDSTATE) {//すでにどこかに送信中
 		WaitingList = new struct clientnodelist;
 		WaitingList->ClientNode = ClientNode;
 		WaitingList->PieceID = RequestPieceID;
 		WaitingList->Next = NULL;
 		CurrentList = CloudNode.CloudEdgeWaitingList;
-		if (CurrentList) {
+		if (CurrentList) {//waitinglistにリクエストを追加
 			while (CurrentList->Next) {
 				CurrentList = CurrentList->Next;
 			}
@@ -798,7 +799,7 @@ void EdgeClientRequest(double EventTime, struct clientnode* ClientNode,bool Cach
 	struct clientnodelist* WaitingList;
 	struct clientnodelist* CurrentList;
 
-	if (EdgeNode->State & EDGECLIENTSENDSTATE) {
+	if (EdgeNode->State & EDGECLIENTSENDSTATE) {//edgeがsend中かどうか
 		ClientNode->State |= EDGECLIENTWAITSTATE;
 		WaitingList = new struct clientnodelist;
 		WaitingList->ClientNode = ClientNode;
@@ -822,14 +823,14 @@ void EdgeClientRequest(double EventTime, struct clientnode* ClientNode,bool Cach
 		}
 	}
 	else {
-		EdgeNode->State |= EDGECLIENTSENDSTATE;
-		ClientNode->State |= EDGECLIENTRECEIVESTATE;
+		EdgeNode->State |= EDGECLIENTSENDSTATE;//edgeがpieceをsendする
+		ClientNode->State |= EDGECLIENTRECEIVESTATE;//clientがpieceをreceiveする
 
-		r = (double)rand() / RAND_MAX;
+		r = (double)rand() / RAND_MAX;//帯域幅の揺れ
 		Bandwidth = (EdgeNode->EdgeClientBandwidth)*(1.0 + BandwidthWaver * (2.0 * r - 1.0));
 
-		FinishTime = EventTime + 8.0 * PieceSize / Bandwidth;
-		AddEvent(FinishTime, EDGECLIENTFINISHEVENT, ClientNode, RequestPieceID, Cached);
+		FinishTime = EventTime + 8.0 * PieceSize / Bandwidth;//エッジからvideoをもらうのにかかる時間
+		AddEvent(FinishTime, EDGECLIENTFINISHEVENT, ClientNode, RequestPieceID, Cached);//Cached falseだと一番近いエッジにpieceが保存されていない
 	}
 }
 void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode) {
@@ -843,14 +844,14 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 		if (VideoID < EdgeNodes[ReceiveEdgeNodeID].StartVideoID)
 			break;
 	}
-	ReceiveEdgeNodeID--;
-	ClientNode->VideoEdgeNode = &(EdgeNodes[ReceiveEdgeNodeID]);
+	ReceiveEdgeNodeID--;//videoがあるedgeを決定
+	ClientNode->VideoEdgeNode = &(EdgeNodes[ReceiveEdgeNodeID]);//videoをとってくるedge
 
 	Hit = VoteHotCache(ClientNode,true);//Reserveの可能性がある
 
 	if (Hit == false) {
-		if ((ConnectedEdgeNode == ClientNode->VideoEdgeNode)
-			&& (ReceivePieceID < NumPrePieces)) {
+		if ((ConnectedEdgeNode == ClientNode->VideoEdgeNode)//一番近いedgeが見ているvideoを保存するedge
+			&& (ReceivePieceID < NumPrePieces)) {//前半何個か分だけ保存
 			ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			EdgeClientRequest(EventTime, ClientNode, false);
 		}
@@ -862,7 +863,7 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 	}
 
 	//Edgeプリキャッシュ
-	if ((ConnectedEdgeNode != ClientNode->VideoEdgeNode)
+	if ((ConnectedEdgeNode != ClientNode->VideoEdgeNode)//一番近いedgeは見ているvideoを保存するedgeと違う
 		&&(ReceivePieceID<NumPrePieces)){
 		OverheadTime = 64.0 * 8.0 / ConnectedEdgeNode->EdgeEdgeBandwidth;
 		HotCachePosition = ClientNode->EdgeEdgeSearchedHotCachePosition;
@@ -875,7 +876,7 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 		else if(ConnectedEdgeNode->HotCache[HotCachePosition].PieceID<NumPrePieces-1){//途中からない
 			SearchPieceID = ConnectedEdgeNode->HotCache[HotCachePosition].PieceID + 1;
 			if (SearchReceivingWaiting(ClientNode, SearchPieceID) == false) {//マージできない
-				ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize;
+				ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize; 
 				EdgeEdgeRequest(EventTime + OverheadTime, ClientNode, SearchPieceID);
 			}
 		}
@@ -885,8 +886,8 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 	OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
 	HotCachePosition= ClientNode->CloudEdgeSearchedHotCachePosition;
 	if (HotCachePosition == -1) {//最初がない
-		if (SearchReceivingWaiting(ClientNode, NumPrePieces) == false) {//マージできない
-			CloudNode.CloudEdgeReadBytes += PieceSize;
+		if (SearchReceivingWaiting(ClientNode, NumPrePieces) == false) {//マージできない そのpieceを要求しているリクエストがまだない
+			CloudNode.CloudEdgeReadBytes += PieceSize;//クラウドから要求する
 			CloudEdgeRequest(EventTime + OverheadTime, ClientNode, NumPrePieces);
 		}
 	}
@@ -918,7 +919,7 @@ int GetDeleteHotCachePosition(struct clientnode* ClientNode, int PieceID) {
 	//CurrentVoted
 	while (ClientList != NULL) {
 		if ((ClientList->ClientNode->VideoID == VideoID)
-			&& (ClientList->ClientNode->EdgeClientReceivedPieceID < PieceID)) {
+			&& (ClientList->ClientNode->EdgeClientReceivedPieceID < PieceID)) {//そのvideoを見る可能性がある人数
 			CurrentVoted++;
 		}
 		ClientList = ClientList->Next;
@@ -930,11 +931,11 @@ int GetDeleteHotCachePosition(struct clientnode* ClientNode, int PieceID) {
 		else
 			CurrentHotCachePosition++;
 		if (ConnectedEdgeNode->HotCache[CurrentHotCachePosition].Voted == 0) {
-			DeleteHotCachePosition = CurrentHotCachePosition;
+			DeleteHotCachePosition = CurrentHotCachePosition;//誰も見ていない
 			break;
 		}
 		/*
-		if (ConnectedEdgeNode->HotCache[CurrentHotCachePosition].Voted < CurrentVoted) {
+		if (ConnectedEdgeNode->HotCache[CurrentHotCachePosition].Voted < CurrentVoted) {//そのvideoを見る人数の方が多い
 			CurrentVoted = ConnectedEdgeNode->HotCache[CurrentHotCachePosition].Voted;
 			DeleteHotCachePosition = CurrentHotCachePosition;
 		}
@@ -965,6 +966,7 @@ int StoreHotCache(struct clientnode* ClientNode, int StorePieceID) {
 	struct clientnode* CurrentClientNode;
 	int VirtualCurrentPosition,VirtualHotCacheEnd,VirtualDeleteHotCachePosition;
 
+	ccc = StorePieceID;
 	if (HotCacheNumPieces == 0) {
 		return -1;
 	}
@@ -1105,7 +1107,7 @@ int StoreHotCache(struct clientnode* ClientNode, int StorePieceID) {
 	ConnectedEdgeNode->HotCache[HotCacheEnd].VideoID = VideoID;
 	ConnectedEdgeNode->HotCache[HotCacheEnd].PieceID = StorePieceID;
 	ConnectedEdgeNode->HotCache[HotCacheEnd].Voted = -1;
-	ConnectedEdgeNode->HotCacheStart= HotCacheStart;
+	ConnectedEdgeNode->HotCacheStart = HotCacheStart;
 	ConnectedEdgeNode->HotCacheEnd = HotCacheEnd;
 
 	CheckHotCache(ClientNode);
@@ -1257,8 +1259,8 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 	double OverheadTime;
 
 
-	CloudNode.State &= (~CLOUDEDGESENDSTATE);
-	ConnectedEdgeNode->State &= (~CLOUDEDGERECEIVESTATE);
+	CloudNode.State &= (~CLOUDEDGESENDSTATE);//send終了
+	ConnectedEdgeNode->State &= (~CLOUDEDGERECEIVESTATE);//receive終了
 	ConnectedEdgeNode->CloudEdgeReceiveVideoID = -1;
 	ConnectedEdgeNode->CloudEdgeReceivePieceID = -1;
 
@@ -1289,10 +1291,10 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 
 	OverheadTime = 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
 	if (Stored||Direct) {
-		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->CloudEdgeSearchedHotCachePosition), true)) {
+		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->CloudEdgeSearchedHotCachePosition), true)) {//すでに次のpieceがキャッシュされているか確認
 			ReceivedPieceID = ConnectedEdgeNode->HotCache[ClientNode->CloudEdgeSearchedHotCachePosition].PieceID;
 		}
-		ReceivePieceID = ReceivedPieceID + 1;  //ReceivedではなくReceive
+		ReceivePieceID = ReceivedPieceID + 1;  //ReceivedではなくReceive   次にどこを取ってくるか決定
 		if ((ReceivePieceID  < NumPieces)
 			&&(SearchReceivingWaiting(ClientNode, ReceivePieceID) == false)) {//マージできない
 			CloudNode.CloudEdgeReadBytes += PieceSize;
@@ -1330,6 +1332,7 @@ void ExecuteClientOnEvent(double EventTime,struct clientnode* ClientNode) {
 	OverheadTime = 64.0 * 8.0 / ConnectedEdgeNode->EdgeClientBandwidth;
 	AddEvent(EventTime + OverheadTime, EDGECLIENTFETCHEVENT, ClientNode, 0, 0);
 }
+
 void EventParser() {
 	if (10<LastSumInterruptDuration)
 		LastSumInterruptDuration = LastSumInterruptDuration ;
@@ -1342,7 +1345,7 @@ void EventParser() {
 	}
 	switch (TopEvent->EventID) {
 	case CLIENTONEVENT:
-		printf("On:%lf\t%d\t%d\t%d\tLast:%lf\tAve:%lf\tMax:%lf\n", TopEvent->Time, ((clientnode*)(TopEvent->ClientNode))->ID, NumReceivingClients, NumReceivedClients, LastSumInterruptDuration,AverageInterruptDuration / NumReceivedClients,MaximumInterruptDuration);
+		printf("On:%lf\tID%d\tReciving%d\tReceived%d\tLast:%lf\tAve:%lf\tMax:%lf\n", TopEvent->Time, ((clientnode*)(TopEvent->ClientNode))->ID, NumReceivingClients, NumReceivedClients, LastSumInterruptDuration,AverageInterruptDuration / NumReceivedClients,MaximumInterruptDuration);
 		ExecuteClientOnEvent(TopEvent->Time, (clientnode*)(TopEvent->ClientNode));
 		break;
 	case EDGECLIENTFETCHEVENT:
@@ -1418,7 +1421,7 @@ void Initialize() {
 
 #ifdef LOG
 	char FileName[64];
-	sprintf_s(FileName, 64, "log%d.txt", DistributionMethod);
+	sprintf(FileName, "log%d.txt", DistributionMethod);
 	LogFile = myfopen(FileName, "w");
 #endif
 
@@ -1529,7 +1532,7 @@ void InitializeClientNodes() {
 		ClientNodes[i].State = OFFSTATE;
 		ClientNodes[i].OnTime = -1.0;
 		ClientNodes[i].ConnectedEdgeNode = &(EdgeNodes[ConnectedEdgeCounter]);
-		ClientNodes[i].VideoID = (GetZipfVideoID() + ClientNodes[i].ConnectedEdgeNode->StartVideoID) % NumVideos;
+		ClientNodes[i].VideoID = (GetZipfVideoID() + ClientNodes[i].ConnectedEdgeNode->StartVideoID) % NumVideos;//地域性を出している？Edge0は0~のvideoが見られやすい　Edge1は13~のvideoが見られやすい
 		ClientNodes[i].NumInterrupt = 0;
 		ClientNodes[i].Interrupts = NULL;
 		ClientNodes[i].SumInterruptDuration = 0.0;
@@ -1557,7 +1560,7 @@ void Simulate() {
 
 	while (TopEvent->Time < SimulationTime) {
 #ifdef LOG
-		fprintf_s(LogFile, "%lf\t%d\t%d\t%d\t%d\t%d\t%d\n", TopEvent->Time, TopEvent->EventNum, TopEvent->EventID, TopEvent->ClientNode->ID, TopEvent->Data1, TopEvent->Data2,TopEvent->ClientNode->VideoID);
+		fprintf(LogFile, "time%lf\tevent%d\teventID%d\tclientID%d\tData1,%d\tData2,%d\tvideoID%d\n", TopEvent->Time, TopEvent->EventNum, TopEvent->EventID, TopEvent->ClientNode->ID, TopEvent->Data1, TopEvent->Data2,TopEvent->ClientNode->VideoID);
 		fflush(LogFile);
 #endif
 		EventParser();
@@ -1586,36 +1589,35 @@ void EvaluateLambda() {
 	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth = 1000000000000.0;//1T
-	EdgeEdgeBandwidth =  1000000000000.0;//1T
-	EdgeClientBandwidth =    100000000.0;//100M
+	CloudEdgeBandwidth = 1000000000000.0;//1Tbps
+	EdgeEdgeBandwidth =  1000000000000.0;//1Tbps
+	EdgeClientBandwidth =    100000000.0;//100Mbps
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 30 * 60.0;//視聴時間
+	Duration = 60 * 30.0;//視聴時間 30*60
 	PieceSize = (int)(5.0*BitRate / 8);//5秒
-	NumPrePieces = 999;//下で変えてる
-	SimulationTime = 5.0 * 60 * 60;
+	NumPrePieces = 999;//下で変えてる  360piecesh
+	SimulationTime = 5.0 * 60 * 60;//5*60*60
 	BandwidthWaver = 0.0;
-	//HotCacheNumPieces = 1,000,000,000 / PieceSize;
-	HotCacheNumPieces = 0;
-	NumEdges = 8;
-	NumVideos = 100;
+	HotCacheNumPieces = 13000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
+	//HotCacheNumPieces = 0;
+	NumEdges = 8;//8
+	NumVideos = 100;//900Gb 112.5GB
 
-	sprintf_s(FileName, 64, "EvaluateLambda.dat");
+	sprintf(FileName, "EvaluateLambda.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 0; i <= 0; i++) {
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
-		for (j = 11; j <= 15; j++) {
-			if (j == 0)AverageArrivalInterval = 12;
-			else AverageArrivalInterval = j ;
+		for (j = 10; j <= 10; j++) {//15
+			if (j == 0)AverageArrivalInterval = 12;//12
+			else AverageArrivalInterval = j ;//j
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%lf\t", AverageArrivalInterval);
-			for (l = 0; l <= 3; l++) {
-				if (l < 3)NumPrePieces = (l + 1) * 10;
+			fprintf(ResultFile, "AAI%lf\t", AverageArrivalInterval);
+			for (l = 4; l <= 4; l++) {//3
+				if (l < 4)NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
-
 				AveInterruptDuration = 0.0;
 				AveNumInterrupt = 0.0;
 				MaxInterrupt = 0.0;
@@ -1635,18 +1637,19 @@ void EvaluateLambda() {
 					if (MinInterrupt > MinimumInterruptDuration)
 						MinInterrupt = MinimumInterruptDuration;
 					Finalize();
+					DistributionMethod +=1;
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -1676,18 +1679,18 @@ void EvaluateCloudEdgeBandwidth() {
 	NumEdges = 8;
 	NumVideos = 4000;
 
-	sprintf_s(FileName, 64, "EvaluateCloudEdgeBandwidth.dat");
+	sprintf(FileName, "EvaluateCloudEdgeBandwidth.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 10; i <= 15; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 20; j++) {
 			if (j == 0)CloudEdgeBandwidth = 1000000000.0;//1.6G
 			else CloudEdgeBandwidth=100000000.0* (j + 1);
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%lf\t", CloudEdgeBandwidth/1000000.0);
+			fprintf(ResultFile, "%lf\t", CloudEdgeBandwidth/1000000.0);
 			for (l = 3; l <= 3; l++) {
 				if (l < 3)NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
@@ -1714,15 +1717,15 @@ void EvaluateCloudEdgeBandwidth() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -1754,18 +1757,18 @@ void EvaluateNumPrePieces() {
 	NumEdges = 8;
 	NumVideos = 4000;
 
-	sprintf_s(FileName, 64, "EvaluateNumPrePieces.dat");
+	sprintf(FileName, "EvaluateNumPrePieces.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 7; i <= 7; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 36; j++) {
 			if (j == 0)NumPrePieces=10;
 			else NumPrePieces = j*10;
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%d\t", NumPrePieces);
+			fprintf(ResultFile, "%d\t", NumPrePieces);
 			for (l = 0; l <= 0; l++) {
 				//if (l < 3)NumPrePieces = (l + 1) * 10;
 				//else NumPrePieces = 0;
@@ -1792,15 +1795,15 @@ void EvaluateNumPrePieces() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -1830,18 +1833,18 @@ void EvaluateHotCacheNumPieces() {
 	NumEdges = 8;
 	NumVideos = 99999;
 
-	sprintf_s(FileName, 64, "EvaluateHotCacheNumPieces.dat");
+	sprintf(FileName, "EvaluateHotCacheNumPieces.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 7; i <= 7; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 30; j++) {
 			if (j == 0)HotCacheNumPieces = 0;
 			else HotCacheNumPieces = j * 10;
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%d\t", HotCacheNumPieces);
+			fprintf(ResultFile, "%d\t", HotCacheNumPieces);
 			for (l = 0; l <= 0; l++) {
 
 				AveInterruptDuration = 0.0;
@@ -1866,15 +1869,15 @@ void EvaluateHotCacheNumPieces() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -1904,18 +1907,18 @@ void EvaluateEdgeEdgeBandwidth() {
 	NumEdges = 8;
 	NumVideos = 100;
 
-	sprintf_s(FileName, 64, "EvaluateEdgeEdgeBandwidth.dat");
+	sprintf(FileName, "EvaluateEdgeEdgeBandwidth.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 7; i <= 7; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 5; j++) {
 			if (j == 0)EdgeEdgeBandwidth = 1600000000.0;
 			else EdgeEdgeBandwidth = j * 100000000.0;
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%lf\t", EdgeEdgeBandwidth / 1000000.0);
+			fprintf(ResultFile, "%lf\t", EdgeEdgeBandwidth / 1000000.0);
 			for (l = 3; l <= 3; l++) {
 				if (l < 3)NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
@@ -1942,15 +1945,15 @@ void EvaluateEdgeEdgeBandwidth() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -1980,18 +1983,18 @@ void EvaluateNumVideos() {
 	NumEdges = 8;
 	NumVideos = 100;
 
-	sprintf_s(FileName, 64, "EvaluateNumVideos.dat");
+	sprintf(FileName, "EvaluateNumVideos.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 7; i <= 7; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 5; j++) {
 			if (j == 0)NumVideos=1;
 			else NumVideos=(int)pow(10,j);
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%d\t", NumVideos);
+			fprintf(ResultFile, "%d\t", NumVideos);
 			for (l = 0; l <= 0; l++) {
 
 				AveInterruptDuration = 0.0;
@@ -2016,15 +2019,15 @@ void EvaluateNumVideos() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
@@ -2038,14 +2041,14 @@ void EvaluateNumEdges() {
 	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth = 600000000.0;
-	EdgeEdgeBandwidth = 1000000000000.0;
-	EdgeClientBandwidth = 100000000.0;
+	CloudEdgeBandwidth = 600000000.0;//600Mb
+	EdgeEdgeBandwidth = 1000000000000.0;//1Tb
+	EdgeClientBandwidth = 100000000.0;//100Mb
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024
 	Duration = 30 * 60.0;
-	PieceSize = (int)(5.0 * BitRate / 8);//5秒
+	PieceSize = (int)(5.0 * BitRate / 8);//5秒Byte
 	NumPrePieces = 70;
 	SimulationTime = 6.0 * 60 * 60;
 	BandwidthWaver = 0.0;
@@ -2054,18 +2057,18 @@ void EvaluateNumEdges() {
 	NumEdges = 8;
 	NumVideos = 100;
 
-	sprintf_s(FileName, 64, "EvaluateNumEdges.dat");
+	sprintf(FileName, "EvaluateNumEdges.dat");
 	ResultFile = myfopen(FileName, "w");
 	for (i = 7; i <= 7; i++) {
 		if (i == 0)AverageArrivalInterval = 1;
 		else AverageArrivalInterval = (i - 1.0) * 2;
-		fprintf_s(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
+		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 0; j <= 5; j++) {
 			if (j == 0)NumEdges = 1;
 			else NumEdges=j*2;
 			MinAveInterrupt = 1.0e32;
-			fprintf_s(ResultFile, "%d\t", NumEdges);
+			fprintf(ResultFile, "%d\t", NumEdges);
 			for (l = 0; l <= 0; l++) {
 
 				AveInterruptDuration = 0.0;
@@ -2090,15 +2093,15 @@ void EvaluateNumEdges() {
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf_s(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 		while (n < 51) {
-			fprintf_s(ResultFile, "\n");
+			fprintf(ResultFile, "\n");
 			n++;
 		}
 	}
