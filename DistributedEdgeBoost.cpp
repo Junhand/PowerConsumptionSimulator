@@ -10,7 +10,7 @@
 #define MAXNUMEDGENODES 10
 #define MAXNUMCLIENTNODES 1000000 //2147483647/96 22369621くらいまでいける
 #define MAXNUMVIDEOS 100001
-#define MAXHOTCACHE 5000
+#define MAXHOTCACHE 500000
 #define MAXNUMPIECES 1000
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -1586,7 +1586,7 @@ void EvaluateLambda() {
 	char FileName[64];
 	FILE* ResultFile;
 	double CloudEdgeBandwidth, EdgeEdgeBandwidth, EdgeClientBandwidth;
-	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt;
+	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt, EdgeVolume;
 
 	RandType = 0;//0:一定、1:指数
 	CloudEdgeBandwidth = 1000000000000.0;//1Tbps
@@ -1600,7 +1600,7 @@ void EvaluateLambda() {
 	NumPrePieces = 999;//下で変えてる  360piecesh
 	SimulationTime = 5.0 * 60 * 60;//5*60*60
 	BandwidthWaver = 0.0;
-	HotCacheNumPieces = 13000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
+	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
 	NumEdges = 8;//8
 	NumVideos = 100;//900Gb 112.5GB
@@ -1610,13 +1610,13 @@ void EvaluateLambda() {
 	for (i = 0; i <= 0; i++) {
 		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
-		for (j = 10; j <= 10; j++) {//15
+		for (j = 8; j <= 8; j++) {//15
 			if (j == 0)AverageArrivalInterval = 12;//12
 			else AverageArrivalInterval = j ;//j
 			MinAveInterrupt = 1.0e32;
-			fprintf(ResultFile, "AAI%lf\t", AverageArrivalInterval);
-			for (l = 4; l <= 4; l++) {//3
-				if (l < 4)NumPrePieces = (l + 1) * 10;
+			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
+			for (l = 23; l <= 30; l++) {//3
+				if (l >= 0) HotCacheNumPieces = (double)l*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
 				AveInterruptDuration = 0.0;
 				AveNumInterrupt = 0.0;
@@ -1637,11 +1637,12 @@ void EvaluateLambda() {
 					if (MinInterrupt > MinimumInterruptDuration)
 						MinInterrupt = MinimumInterruptDuration;
 					Finalize();
-					DistributionMethod +=1;
+					//DistributionMethod +=1;
 				}
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
-				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
+				EdgeVolume = (double)HotCacheNumPieces*PieceSize;
+				fprintf(ResultFile, "%lf\t%.0lf\t%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t\n",AverageArrivalInterval,EdgeVolume, AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
 				fflush(ResultFile);
 
 			}
