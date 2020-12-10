@@ -79,6 +79,10 @@ struct edgenode {
 	int EdgeEdgeReceivePieceID;
 	int CloudEdgeReceiveVideoID;
 	int EdgeEdgeReceiveVideoID;
+	int EdgeEdgeSendPieceID;
+	int EdgeEdgeSendVideoID;
+	int EdgeEdgeSendEdgeID;
+	int NumReceiving;
 	struct edgenode* EdgeEdgeReceiveEdgeNode;
 };
 
@@ -87,6 +91,9 @@ struct cloudnode {
 	double CloudEdgeReadBytes;
 	short State;
 	double CloudEdgeBandwidth;
+	int CloudEdgeSendPieceID;
+	int CloudEdgeSendVideoID;
+	int CloudEdgeSendEdgeID;
 };
 
 struct clientnode {
@@ -342,7 +349,7 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 	NumReceivedClients++;//取得終了
 	ClientNode->State |= RECEIVEDSTATE;
 
-	if (EdgeNode->OnClientList->ClientNode == ClientNode) {//引数でもらったclientの処理待ちを消す(Top)
+	if (EdgeNode->OnClientList->ClientNode == ClientNode) {//引数でもらったclientが処理中であれば処理待ちを消す(Top)
 		DeleteClientList = EdgeNode->OnClientList;
 		EdgeNode->OnClientList = EdgeNode->OnClientList->Next;
 		delete DeleteClientList;
@@ -358,7 +365,7 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 		}
 	}
 
-	LastSumInterruptDuration= ClientNode->SumInterruptDuration;//そのクライアントの遅延時間
+	LastSumInterruptDuration = ClientNode->SumInterruptDuration;//そのクライアントの遅延時間
 	AverageInterruptDuration += ClientNode->SumInterruptDuration;//全てのクライアントの遅延時間
 	AverageNumInterrupt += ClientNode->NumInterrupt;//全てのクライアントの遅延回数
 	if (MaximumInterruptDuration < ClientNode->SumInterruptDuration)
@@ -378,13 +385,13 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	}
 
 	for(int i=0; i<NumPieces; i++){//自エッジにpieceがあるかどうか
-		if(CloudServer.ExsistPiece[ClientNode->ConnectedEdgeID][ClientNode->VideoID][i] == 1){
+		if(CloudServer.ExsistPiece[ClientNode->ConnectedEdgeID][ClientNode->VideoID][i] >= 0){
 			ClientNode->VideoRequestsID[i] = ClientNode->ConnectedEdgeID;
 			whichNode[i][ClientNode->ConnectedEdgeID] = 1;
 		}
 		else{//他エッジにpieceがあるかどうか
 			for (int ReceiveEdgeNodeID = 0; ReceiveEdgeNodeID < NumEdges; ReceiveEdgeNodeID++) {
-				if(CloudServer.ExsistPiece[ReceiveEdgeNodeID][ClientNode->VideoID][i] == 1){
+				if(CloudServer.ExsistPiece[ReceiveEdgeNodeID][ClientNode->VideoID][i] >= 0){
 					whichNode[i][ReceiveEdgeNodeID]= 1;
 				}
 			}
@@ -397,10 +404,10 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			while(1){
 				if(whichNode[j][existCount]==1){
 					if(j==0 && existCount==NumEdges) EdgeOrCloudFlag = -1;//最初クラウドから取得
-					if(existCount!=NumEdges){
+					if(existCount!=NumEdges){//他のエッジから取得
 						ClientNode->VideoRequestsID[j] = existCount;
 						existCount++;
-					}else{
+					}else{//クラウドから取得
 						ClientNode->VideoRequestsID[j] = existCount;
 						existCount=0;
 					}
@@ -411,10 +418,16 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			}
 		}
 	}
-	/*printf("%f %f\n",CloudServer.CloudDiskIORead,CloudServer.CloudNetworkIORead);
+	printf("cloud DiskOut %.2fMB NICOut %.2fMB\n",CloudServer.CloudDiskIORead/1000000,CloudServer.CloudNetworkIORead/1000000);
+	if(CloudServer.CloudDiskIORead<0||CloudServer.CloudNetworkIORead<0){
+		int cloudServerGets=112;
+	}
 	for(int i=0;i<NumEdges;i++){
-		printf("%d %f %f %f %f \n",i,CloudServer.EdgeDiskIORead[i],CloudServer.EdgeNetworkIORead[i],CloudServer.EdgeDiskIOWrite[i],CloudServer.EdgeNetworkIOWrite[i]);
-	}*/
+		printf("%d DiskOut %.2f NICOut %.2f DiskIn %.2f NICIn %.2f \n",i,CloudServer.EdgeDiskIORead[i]/1000000,CloudServer.EdgeNetworkIORead[i]/1000000,CloudServer.EdgeDiskIOWrite[i]/1000000,CloudServer.EdgeNetworkIOWrite[i]/1000000);
+		if(CloudServer.EdgeDiskIORead[i] <0 || CloudServer.EdgeNetworkIORead[i] <0 || CloudServer.EdgeDiskIOWrite[i]<0 || CloudServer.EdgeNetworkIOWrite[i]<0){
+			int cloudServerGet=111;
+		}
+	}
 
 	return EdgeOrCloudFlag;//-1はcloud 1はedge
 }
@@ -468,6 +481,9 @@ void EdgeEdgeWaiting(double EventTime, struct edgenode* FromEdgeNode) {
 		delete WaitingList;
 
 		FromEdgeNode->State |= EDGEEDGESENDSTATE;
+		FromEdgeNode->EdgeEdgeSendPieceID = PieceID;
+		FromEdgeNode->EdgeEdgeSendVideoID = ClientNode->VideoID;
+		FromEdgeNode->EdgeEdgeSendEdgeID = ToEdgeNode->ID;
 		ToEdgeNode->State |= EDGEEDGERECEIVESTATE;
 		ToEdgeNode->EdgeEdgeReceivePieceID = PieceID;
 		ToEdgeNode->EdgeEdgeReceiveVideoID = ClientNode->VideoID;
@@ -479,6 +495,7 @@ void EdgeEdgeWaiting(double EventTime, struct edgenode* FromEdgeNode) {
 		AddEvent(FinishTime, EDGEEDGEFINISHEVENT, ClientNode, PieceID, 0);
 	}
 }
+
 void CloudEdgeWaiting(double EventTime) {
 	struct clientnodelist* WaitingList = CloudNode.CloudEdgeWaitingList;
 	struct edgenode* ToEdgeNode;
@@ -494,26 +511,30 @@ void CloudEdgeWaiting(double EventTime) {
 		delete WaitingList;
 
 		CloudNode.State |= CLOUDEDGESENDSTATE;
+		CloudNode.CloudEdgeSendPieceID = PieceID;
+		CloudNode.CloudEdgeSendVideoID = ClientNode->VideoID;
+		CloudNode.CloudEdgeSendEdgeID = ToEdgeNode->ID;
 		ToEdgeNode->State |= CLOUDEDGERECEIVESTATE;
-		ToEdgeNode->CloudEdgeReceivePieceID =PieceID;
-		ToEdgeNode->CloudEdgeReceiveVideoID= ClientNode->VideoID;
+		ToEdgeNode->CloudEdgeReceivePieceID = PieceID;
+		ToEdgeNode->CloudEdgeReceiveVideoID = ClientNode->VideoID;
 
 		r = (double)rand() / RAND_MAX;
 		Bandwidth = (CloudNode.CloudEdgeBandwidth)*(1.0 + BandwidthWaver * (2.0 * r - 1.0));
 		FinishTime = EventTime + 8.0 * PieceSize / Bandwidth;
+	
 		AddEvent(FinishTime, CLOUDEDGEFINISHEVENT, ClientNode, PieceID, 0);
 	}
 }
+
 bool SearchHotCache(struct clientnode* ClientNode, int SearchPieceID, int* SearchedHostCachePosition, bool Continuous) {
 	struct edgenode* ConnectedEdgeNode = ClientNode->ConnectedEdgeNode;
 	int VideoID = ClientNode->VideoID, CurrentPieceID;
 	int HotCachePosition, EndPosition, MaximumPieceID;
 	bool Hit = false, Twice = false;
 
-	if (ClientNode->ID == 127)
-		ClientNode->ID =127;
+	if (ClientNode->ID == 127) ClientNode->ID =127;
 
-	if (ConnectedEdgeNode->HotCacheStart == -1) {
+	if (ConnectedEdgeNode->HotCacheStart == -1) {//キャッシュされていない
 		return false;
 	}
 
@@ -527,9 +548,6 @@ bool SearchHotCache(struct clientnode* ClientNode, int SearchPieceID, int* Searc
 	}
 
 	if (Continuous) {
-		if (SearchPieceID < NumPrePieces)
-			MaximumPieceID = NumPrePieces - 1;
-		else
 			MaximumPieceID = NumPieces - 1;
 	}
 
@@ -546,6 +564,7 @@ bool SearchHotCache(struct clientnode* ClientNode, int SearchPieceID, int* Searc
 			if ( CurrentPieceID==SearchPieceID) {
 				*SearchedHostCachePosition = HotCachePosition;
 				Hit = true;
+				//return true;
 				if (Continuous) {
 					Twice = true;
 					if (SearchPieceID == MaximumPieceID)
@@ -730,6 +749,9 @@ bool IsStoreHotCache(struct clientnode* ClientNode, int StorePieceID) {//store�
 	struct edgenode* ConnectedEdgeNode = ClientNode->ConnectedEdgeNode;
 	int HotCacheStart= ConnectedEdgeNode->HotCacheStart, HotCacheEnd= ConnectedEdgeNode->HotCacheEnd,HotCacheUsed;
 	int CurrentHotCachePosition,DeleteHotCachePosition;
+	int CurrentNumDelete = 0;
+	int CurrentNumReceiving = ConnectedEdgeNode->NumReceiving;
+	
 	struct clientnodelist* ClientList;
 	struct clientnode* CurrentClientNode;
 	int VirtualCurrentPosition,VirtualHotCacheEnd,VirtualDeleteHotCachePosition;
@@ -756,9 +778,20 @@ bool IsStoreHotCache(struct clientnode* ClientNode, int StorePieceID) {//store�
 			HotCacheEnd++;//endの増加　つまり保存
 	}
 	else {//空き無し
-		DeleteHotCachePosition = GetDeleteHotCachePosition(ClientNode,StorePieceID);
+		CurrentHotCachePosition = ConnectedEdgeNode->HotCacheStart - 1;
 		
-		if (DeleteHotCachePosition!=-1){
+		do {
+			if (CurrentHotCachePosition == HotCacheNumPieces - 1)//最後なら最初に戻る
+				CurrentHotCachePosition = 0;
+			else
+				CurrentHotCachePosition++;//次を見る
+			if (ConnectedEdgeNode->HotCache[CurrentHotCachePosition].Voted == 0) {
+				//誰も見ていない
+				CurrentNumDelete++;
+			}
+		} while (CurrentHotCachePosition != HotCacheEnd);
+		
+		if (CurrentNumDelete>CurrentNumReceiving){
 			return true;
 		}
 		else {
@@ -837,15 +870,29 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 	struct edgenode* ConnectedEdgeNode = ClientNode->ConnectedEdgeNode;
 	struct clientnodelist* WaitingList;
 
-	if (ClientNode->VideoEdgeNode != NULL) {//探しているpieceをどれだけ他のエッジからとってくるか
-		if (ConnectedEdgeNode->State & EDGEEDGERECEIVESTATE) {//1番近いエッジが他のエッジから受信中のpieceが探しているpiece
-			if ((ConnectedEdgeNode->EdgeEdgeReceiveVideoID == VideoID)
-				&& (ConnectedEdgeNode->EdgeEdgeReceivePieceID == SearchPieceID)) {
-				return true;
-			}
+	
+	if (ConnectedEdgeNode->State & EDGEEDGERECEIVESTATE) {//1番近いエッジが他のエッジから受信中のpieceが探しているpiece
+		if ((ConnectedEdgeNode->EdgeEdgeReceiveVideoID == VideoID)
+			&& (ConnectedEdgeNode->EdgeEdgeReceivePieceID == SearchPieceID)) {
+			return true;
+		}
+	}
+	for(int i=0;i<NumEdges;i++){
+		if(EdgeNodes[i].EdgeEdgeSendEdgeID==ConnectedEdgeNode->ID
+			&&EdgeNodes[i].EdgeEdgeSendVideoID == VideoID
+			&&EdgeNodes[i].EdgeEdgeSendPieceID == SearchPieceID){
+			return true;
+		}
+	}
+
+	for(int i=0;i<NumEdges;i++){
+		if(EdgeNodes[i].EdgeEdgeSendEdgeID==ConnectedEdgeNode->ID
+			&&EdgeNodes[i].EdgeEdgeSendVideoID == VideoID
+			&&EdgeNodes[i].EdgeEdgeSendPieceID == SearchPieceID){
+			return true;
 		}
 
-		WaitingList = ClientNode->VideoEdgeNode->EdgeEdgeWaitingList;
+		WaitingList = EdgeNodes[i].EdgeEdgeWaitingList;//ClientNode->VideoEdgeNode->EdgeEdgeWaitingList;
 		while (WaitingList != NULL) {//videoがキャッシュされるエッジがクラウドから受信中のpieceが探しているpiece
 			if ((WaitingList->ClientNode->ConnectedEdgeNode==ConnectedEdgeNode)
 				&& (WaitingList->ClientNode->VideoID == VideoID)
@@ -855,24 +902,30 @@ bool SearchReceivingWaiting(struct clientnode* ClientNode, int SearchPieceID) {
 			WaitingList = WaitingList->Next;
 		}
 	}
-	else {
-		if (ConnectedEdgeNode->State & CLOUDEDGERECEIVESTATE) {//1番近いエッジがクラウドから受信中のpieceが探しているpiece
-			if ((ConnectedEdgeNode->CloudEdgeReceiveVideoID == VideoID)
-				&& (ConnectedEdgeNode->CloudEdgeReceivePieceID == SearchPieceID)) {
-				return true;
-			}
-		}
-
-		WaitingList = CloudNode.CloudEdgeWaitingList;
-		while (WaitingList != NULL) {//一番近いエッジに探しているpieceを送っているかどうか
-			if ((WaitingList->ClientNode->ConnectedEdgeNode==ConnectedEdgeNode)
-				&&(WaitingList->ClientNode->VideoID == VideoID)
-				&& (WaitingList->PieceID == SearchPieceID)) {
-				return true;
-			}
-			WaitingList = WaitingList->Next;
+	
+	if (ConnectedEdgeNode->State & CLOUDEDGERECEIVESTATE) {//1番近いエッジがクラウドから受信中のpieceが探しているpiece
+		if ((ConnectedEdgeNode->CloudEdgeReceiveVideoID == VideoID)
+			&& (ConnectedEdgeNode->CloudEdgeReceivePieceID == SearchPieceID)) {
+			return true;
 		}
 	}
+
+	if(CloudNode.CloudEdgeSendEdgeID==ConnectedEdgeNode->ID
+		&&CloudNode.CloudEdgeSendVideoID==VideoID
+		&&CloudNode.CloudEdgeSendPieceID==SearchPieceID){
+		return true;
+	}
+	
+	WaitingList = CloudNode.CloudEdgeWaitingList;
+	while(WaitingList != NULL) {//一番近いエッジに探しているpieceを送っているかどうか
+		if ((WaitingList->ClientNode->ConnectedEdgeNode==ConnectedEdgeNode)
+			&&(WaitingList->ClientNode->VideoID == VideoID)
+			&& (WaitingList->PieceID == SearchPieceID)) {
+			return true;
+		}
+		WaitingList = WaitingList->Next;
+	}
+	
 	return false;
 }
 void CloudEdgeRequest(double EventTime, struct clientnode* ClientNode, int RequestPieceID) {
@@ -900,6 +953,9 @@ void CloudEdgeRequest(double EventTime, struct clientnode* ClientNode, int Reque
 	}
 	else {
 		CloudNode.State |= CLOUDEDGESENDSTATE;
+		CloudNode.CloudEdgeSendPieceID = RequestPieceID;
+		CloudNode.CloudEdgeSendVideoID = ClientNode->VideoID;
+		CloudNode.CloudEdgeSendEdgeID = EdgeNode->ID;
 		EdgeNode->State |= CLOUDEDGERECEIVESTATE;
 		EdgeNode->CloudEdgeReceivePieceID = RequestPieceID;
 		EdgeNode->CloudEdgeReceiveVideoID = ClientNode->VideoID;
@@ -937,6 +993,9 @@ void EdgeEdgeRequest(double EventTime, struct clientnode* ClientNode,int Request
 	}
 	else {
 		FromEdgeNode->State |= EDGEEDGESENDSTATE;
+		FromEdgeNode->EdgeEdgeSendPieceID = RequestPieceID;
+		FromEdgeNode->EdgeEdgeSendVideoID = ClientNode->VideoID;
+		FromEdgeNode->EdgeEdgeSendEdgeID = ToEdgeNode->ID;
 		ToEdgeNode->State |= EDGEEDGERECEIVESTATE;
 		ToEdgeNode->EdgeEdgeReceivePieceID = RequestPieceID;
 		ToEdgeNode->EdgeEdgeReceiveVideoID = ClientNode->VideoID;
@@ -1000,14 +1059,14 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 	int decidedNode;//-1ならcloud,1ならedgeからpieceを取得
 	numOfExsistPieceID = 0;
 
-	for (ReceiveEdgeNodeID = 0; ReceiveEdgeNodeID < NumEdges; ReceiveEdgeNodeID++) {
+	/*for (ReceiveEdgeNodeID = 0; ReceiveEdgeNodeID < NumEdges; ReceiveEdgeNodeID++) {
 		if (VideoID < EdgeNodes[ReceiveEdgeNodeID].StartVideoID)
 			break;
 	}
-	ReceiveEdgeNodeID--;//videoがあるedgeを決定
-	ClientNode->VideoEdgeNode = &(EdgeNodes[ReceiveEdgeNodeID]);//videoをとってくるedge
+	ReceiveEdgeNodeID--;//videoがあるedgeを決定*/
+	ClientNode->VideoEdgeNode = &(EdgeNodes[ConnectedEdgeNode->ID]);//videoをとってくるedge
 
-	if(ClientNode->ID==150||ClientNode->ID==300||ClientNode->ID==90){
+	if(ClientNode->ID==316){
 		int stopGG=354;
 	}
 
@@ -1023,24 +1082,24 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 		
 	}
 	else {//一番近いedgeにpieceがある
-		if ((ConnectedEdgeNode == ClientNode->VideoEdgeNode) && (numOfExsistPieceID == NumPieces)){//全てのpieceを一番近いedgeが持っている
+		if(numOfExsistPieceID == NumPieces){//全てのpieceを一番近いedgeが持っている
 			//(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
+			CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
 			ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
 			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
 			numOfExsistPieceID=0;
-			CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
+			//ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
 			EdgeClientRequest(EventTime, ClientNode, false);
 			return;
 		}
 		else {//途中からは他のエッジから取得
 			//(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
+			CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
 			ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
 			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
-			CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
+			//ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
 			EdgeClientRequest(EventTime, ClientNode, false);
 			return;
 		}
@@ -1050,18 +1109,22 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 
 	//Edgeプリキャッシュ
 	if (decidedNode != -1){//一番近いedgeは見ているvideoを保存するedgeと違う
-		OverheadTime = 64.0 * 8.0 / ConnectedEdgeNode->EdgeEdgeBandwidth;
-		ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
+		
 		HotCachePosition = ClientNode->EdgeEdgeSearchedHotCachePosition;
 		if (HotCachePosition == -1){//最初がない
 			if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {//マージできない
+				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
+					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+					ConnectedEdgeNode->NumReceiving += 1;
+				}
+				ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[0]]);
+				OverheadTime = 64.0 * 8.0 / ConnectedEdgeNode->EdgeEdgeBandwidth;
+
 				ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize;
 				CloudServer.EdgeDiskIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
 				CloudServer.EdgeNetworkIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
-				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-					CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-				}
+				CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+				
 				EdgeEdgeRequest(EventTime + OverheadTime, ClientNode, ReceivePieceID);
 				return;
 			}
@@ -1077,18 +1140,23 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 	}
 
 	//Cloudプリキャッシュ
-	OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
+	
 	HotCachePosition= ClientNode->CloudEdgeSearchedHotCachePosition;
 	if (HotCachePosition == -1 && decidedNode == -1) {//最初がない
-		ClientNode->VideoEdgeNode = NULL;
+		
 		if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {//マージできない そのpieceを要求しているリクエストがまだない
+			if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
+				CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+				ConnectedEdgeNode->NumReceiving += 1;
+			}
+			ClientNode->VideoEdgeNode = NULL;
+			OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
+
 			CloudNode.CloudEdgeReadBytes += PieceSize;//クラウドから要求する
 			CloudServer.CloudDiskIORead += PieceSize;
 			CloudServer.CloudNetworkIORead += PieceSize;
-			if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-				CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-				CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-			}
+			CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+			
 			CloudEdgeRequest(EventTime + OverheadTime, ClientNode, ReceivePieceID);
 		}
 	}
@@ -1155,6 +1223,7 @@ int StoreHotCache(struct clientnode* ClientNode, int StorePieceID) {
 		
 		if (DeleteHotCachePosition!=-1){
 			//詰める
+			CloudServer.ExsistPiece[ConnectedEdgeNode->ID][ConnectedEdgeNode->HotCache[DeleteHotCachePosition].VideoID][ConnectedEdgeNode->HotCache[DeleteHotCachePosition].PieceID] = -1;
 
 			CurrentHotCachePosition = DeleteHotCachePosition;//誰も見ていないpiece
 			//ConnectedEdgeNode->HotCache[CurrentHotCachePosition].VideoID;
@@ -1270,8 +1339,6 @@ int StoreHotCache(struct clientnode* ClientNode, int StorePieceID) {
 
 	}
 	
-	CloudServer.ExsistPiece[ConnectedEdgeNode->ID][ConnectedEdgeNode->HotCache[HotCacheEnd].VideoID][ConnectedEdgeNode->HotCache[HotCacheEnd].PieceID] = 0;
-
 	ConnectedEdgeNode->HotCache[HotCacheEnd].VideoID = VideoID;
 	ConnectedEdgeNode->HotCache[HotCacheEnd].PieceID = StorePieceID;
 	ConnectedEdgeNode->HotCache[HotCacheEnd].Voted = -1;
@@ -1292,21 +1359,30 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 	bool Hit;
 	double OverheadTime = 0.0;
 	int ReceivePieceID;
+	if(ClientNode->ID==136&&ReceivedPieceID==9){
+		int edgeclientGet=0;
+	}
 
 	ConnectedEdgeNode->State &= (~EDGECLIENTSENDSTATE);
 	ClientNode->State &= (~EDGECLIENTRECEIVESTATE);
 
-	if(ClientNode->EdgeClientSearchedHotCachePosition<0){//次のHotCacheで範囲外を参照しないように
+	if(ClientNode->EdgeClientSearchedHotCachePosition<0){//次のHotCacheで範囲外を参照しないように -1の時
 
-	}else if (ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted != -1){//見終わった
-		(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
+	}else if(Cached == false
+		&&ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].VideoID==ClientNode->VideoID 
+		&&ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].PieceID==ReceivedPieceID
+		&&ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted != -1){//見終わった
+			(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
 	}
 
-	if(Cached == false){
-		CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] -= PieceSize;
-		CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] -= PieceSize;
-	}else{//edgeまたはcloudから保存した時に最初のpieceを見終わった
-		ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted=0;
+	CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] -= PieceSize;
+	CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] -= PieceSize;
+	if(Cached == true){//edgeまたはcloudから保存した時に最初のpieceを見終わった
+		if(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].VideoID==ClientNode->VideoID 
+		&&ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].PieceID==ReceivedPieceID
+		&&ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted == -1){
+			ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted=0;
+		}
 	}
 
 	PlayPosition = 8.0 * ReceivedPieceID * PieceSize / BitRate;
@@ -1340,7 +1416,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 		VoteHotCache(ClientNode, false);
 		Hit = SearchHotCache(ClientNode, ReceivePieceID, &(ClientNode->EdgeClientSearchedHotCachePosition), false);
 		if (Hit == false) {
-
+			
 			/*if (ConnectedEdgeNode == ClientNode->VideoEdgeNode) {//実行されない
 			//if (ClientNode->ConnectedEdgeNode->ID == ClientNode->VideoRequestsID[ReceivePieceID]) {
 				printf("error miss:piece get but not exsit");
@@ -1357,32 +1433,42 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 					}
 				}
 			}
-			else*/
+			else */
 			if (ClientNode->VideoRequestsID[ReceivePieceID] != NumEdges){//他のエッジから次のpieceを取得
-				ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+				
 				if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+					
+					if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
+						CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+						ConnectedEdgeNode->NumReceiving += 1;
+					}
+					ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
 					OverheadTime += 64.0 * 8.0 / ClientNode->VideoEdgeNode->EdgeEdgeBandwidth;
+
 					ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize;
 					CloudServer.EdgeDiskIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
 					CloudServer.EdgeNetworkIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
-					if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-						CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-						CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-					}
+					CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+
 					EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 				}
 			}
 			else if(ClientNode->VideoRequestsID[ReceivePieceID] == NumEdges){//クラウドから次のpieceを取得
-				ClientNode->VideoEdgeNode = NULL;
+				
 				if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+					
+					if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
+						CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+						ConnectedEdgeNode->NumReceiving += 1;
+					}
+					ClientNode->VideoEdgeNode = NULL;
 					OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
+
 					CloudNode.CloudEdgeReadBytes += PieceSize;
 					CloudServer.CloudDiskIORead += PieceSize;
 					CloudServer.CloudNetworkIORead += PieceSize;
-					if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-						CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-						CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-					}
+					CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+			
 					CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 				}
 			}
@@ -1392,7 +1478,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 			ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
 			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+			//ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
 			EdgeClientRequest(EventTime, ClientNode, false);
 		}
 	}
@@ -1406,21 +1492,27 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 	double OverheadTime;
 	bool Stored=false,Direct=false;
 
-
+	if(ClientNode->ID==136&&ReceivedPieceID==10){
+		int edgeedgeget=1;
+	}
 	FromEdgeNode->State &= (~EDGEEDGESENDSTATE);
+	FromEdgeNode->EdgeEdgeSendPieceID = -1;
+	FromEdgeNode->EdgeEdgeSendVideoID = -1;
+	FromEdgeNode->EdgeEdgeSendEdgeID = -1;
 	ToEdgeNode->State &= (~EDGEEDGERECEIVESTATE);
 	ToEdgeNode->EdgeEdgeReceiveVideoID = -1;
 	ToEdgeNode->EdgeEdgeReceivePieceID = -1;
 	ToEdgeNode->EdgeEdgeReceiveEdgeNode = NULL;
 	CloudServer.EdgeDiskIORead[FromEdgeNode->ID] -= PieceSize;
 	CloudServer.EdgeNetworkIORead[FromEdgeNode->ID] -= PieceSize;
+	CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] -= PieceSize;
 
 	StoredHotCachePosition = StoreHotCache(ClientNode, ReceivedPieceID);
 	if (-1<StoredHotCachePosition) {
 		Stored = true;
 		ToEdgeNode->EdgeEdgeWriteBytes += PieceSize;
 		CloudServer.EdgeDiskIOWrite[ToEdgeNode->ID] -= PieceSize;
-		CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] -= PieceSize;
+		ToEdgeNode->NumReceiving -= 1;
 	}
 	
 	OnClientNodeList = ToEdgeNode->OnClientList;
@@ -1428,7 +1520,10 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 		CurrentClientNode = OnClientNodeList->ClientNode;
 		if (((CurrentClientNode->State) & (EDGECLIENTRECEIVESTATE | EDGECLIENTWAITSTATE)) == 0) {//EDGECLIENTSTREAMない
 			if ((CurrentClientNode->VideoID == VideoID) && (CurrentClientNode->EdgeClientReceivedPieceID + 1 == ReceivedPieceID)) {
-				EdgeClientRequest(EventTime, CurrentClientNode, true);//Stored->true 
+				ToEdgeNode->EdgeClientReadBytes += PieceSize;
+				CloudServer.EdgeDiskIORead[ToEdgeNode->ID] += PieceSize;
+				CloudServer.EdgeNetworkIORead[ToEdgeNode->ID] += PieceSize;
+				EdgeClientRequest(EventTime, CurrentClientNode, Stored);//Stored->true 
 				if (CurrentClientNode == ClientNode) {
 					if(-1< StoredHotCachePosition)
 						ClientNode->EdgeClientSearchedHotCachePosition=StoredHotCachePosition;
@@ -1443,44 +1538,59 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 	EdgeEdgeWaiting(EventTime, FromEdgeNode);
 	//OverheadTime = 64.0 * 8.0 / FromEdgeNode->EdgeEdgeBandwidth;
 	//Direct
-	if ((Stored) && ReceivedPieceID != NumPieces - 1) {
+	if ((Stored||Direct) && ReceivedPieceID != NumPieces - 1) {
 		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->EdgeEdgeSearchedHotCachePosition), true)) {
 			ReceivedPieceID = ToEdgeNode->HotCache[ClientNode->EdgeEdgeSearchedHotCachePosition].PieceID;
 		}
 		ReceivePieceID = ReceivedPieceID + 1;
-		if(ClientNode->VideoRequestsID[ReceivePieceID] == ToEdgeNode->ID){//一番近いエッジ
+		if(ReceivePieceID == NumPieces) return;
+		while(ClientNode->VideoRequestsID[ReceivePieceID] == ToEdgeNode->ID){
+			ReceivePieceID++;
+			printf("Serached but exsit piece (EdgeEdge)\n");
+		}	
+		//一番近いエッジ
 			//(ToEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
 			/*ToEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ToEdgeNode->ID] += PieceSize;
-			CloudServer.EdgeNetworkIORead[ToEdgeNode->ID] += PieceSize;
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
-			EdgeClientRequest(EventTime, ClientNode, false);*/
-		}
-		else if (ClientNode->VideoRequestsID[ReceivePieceID] != NumEdges){//他のエッジから次のpieceを取得
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+			CloudServer.EdgeNetworkIORead[ToEdgeNode->ID] += PieceSize;*/
+			//ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+			//EdgeClientRequest(EventTime, ClientNode, false);
+		
+		if (ClientNode->VideoRequestsID[ReceivePieceID] != NumEdges){//他のエッジから次のpieceを取得
+			
 			if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+				
+				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {//意味がない　次はedgeClient通信の後に実行されるため実行しない？
+					CloudServer.EdgeDiskIOWrite[ToEdgeNode->ID] += PieceSize;
+					ToEdgeNode->NumReceiving += 1;
+				}
+				ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
 				OverheadTime += 64.0 * 8.0 / ClientNode->VideoEdgeNode->EdgeEdgeBandwidth;
+
 				ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize;
 				CloudServer.EdgeDiskIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
 				CloudServer.EdgeNetworkIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
-				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-					CloudServer.EdgeDiskIOWrite[ToEdgeNode->ID] += PieceSize;
-					CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] += PieceSize;
-				}
+				CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] += PieceSize;
+
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 			}
 		}
 		else if(ClientNode->VideoRequestsID[ReceivePieceID] == NumEdges){//クラウドから次のpieceを取得
-			ClientNode->VideoEdgeNode = NULL;
+			
 			if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+				
+				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {//意味がない　次はedgeClient通信の後に実行されるため実行しない？
+					CloudServer.EdgeDiskIOWrite[ToEdgeNode->ID] += PieceSize;
+					ToEdgeNode->NumReceiving += 1;
+				}
+				ClientNode->VideoEdgeNode = NULL;
 				OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
+
 				CloudNode.CloudEdgeReadBytes += PieceSize;
 				CloudServer.CloudDiskIORead += PieceSize;
 				CloudServer.CloudNetworkIORead += PieceSize;
-				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-					CloudServer.EdgeDiskIOWrite[ToEdgeNode->ID] += PieceSize;
-					CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] += PieceSize;
-				}
+				CloudServer.EdgeNetworkIOWrite[ToEdgeNode->ID] += PieceSize;
+				
 				CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 			}
 		}
@@ -1505,18 +1615,26 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 	double OverheadTime;
 
 	CloudNode.State &= (~CLOUDEDGESENDSTATE);//send終了
+	CloudNode.CloudEdgeSendPieceID = -1;
+	CloudNode.CloudEdgeSendVideoID = -1;
+	CloudNode.CloudEdgeSendEdgeID = -1;
 	ConnectedEdgeNode->State &= (~CLOUDEDGERECEIVESTATE);//receive終了
 	ConnectedEdgeNode->CloudEdgeReceiveVideoID = -1;
 	ConnectedEdgeNode->CloudEdgeReceivePieceID = -1;
 	CloudServer.CloudDiskIORead -= PieceSize;
 	CloudServer.CloudNetworkIORead -= PieceSize;
+	CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] -= PieceSize;
+
+	if(ClientNode->ID==5&&ReceivedPieceID==75){
+		int cloudGet=0;
+	}
 
 	StoredHotCachePosition = StoreHotCache(ClientNode, ReceivedPieceID);
 	if (-1<StoredHotCachePosition) {
 		Stored = true;
 		ConnectedEdgeNode->CloudEdgeWriteBytes += PieceSize;
 		CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] -= PieceSize;
-		CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] -= PieceSize;
+		ConnectedEdgeNode->NumReceiving -= 1;
 	}
 	
 	OnClientNodeList = ConnectedEdgeNode->OnClientList;
@@ -1524,7 +1642,10 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 		CurrentClientNode = OnClientNodeList->ClientNode;
 		if (((CurrentClientNode->State) & (EDGECLIENTRECEIVESTATE | EDGECLIENTWAITSTATE)) == 0) {//EDGECLIENTSTREAMない
 			if ((CurrentClientNode->VideoID==VideoID)&&(CurrentClientNode->EdgeClientReceivedPieceID + 1 == ReceivedPieceID)) {
-				EdgeClientRequest(EventTime, CurrentClientNode, true);//Stored->true 
+				ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
+				CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
+				CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
+				EdgeClientRequest(EventTime, CurrentClientNode, Stored);//Stored->true 
 				if (CurrentClientNode == ClientNode) {
 					if(-1< StoredHotCachePosition)
 						ClientNode->EdgeClientSearchedHotCachePosition=StoredHotCachePosition;
@@ -1540,44 +1661,59 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 
 	//OverheadTime = 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
 	//Direct
-	if ((Stored) && ReceivedPieceID != NumPieces - 1) {//
+	if ((Stored||Direct) && ReceivedPieceID != NumPieces - 1) {
 		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->CloudEdgeSearchedHotCachePosition), true)) {//すでに次のpieceがキャッシュされているか確認
 			ReceivedPieceID = ConnectedEdgeNode->HotCache[ClientNode->CloudEdgeSearchedHotCachePosition].PieceID;
 		}
 		ReceivePieceID = ReceivedPieceID + 1;  //ReceivedではなくReceive   次にどこを取ってくるか決定
-		if(ClientNode->VideoRequestsID[ReceivePieceID] == ConnectedEdgeNode->ID){//一番近いエッジ
+		if(ReceivePieceID == NumPieces) return;
+		while(ClientNode->VideoRequestsID[ReceivePieceID] == ConnectedEdgeNode->ID){
+			ReceivePieceID++;
+			printf("Serached but exsit piece(CloudEdge)\n");
+		}
+		//一番近いエッジ
 			//(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
 			/*ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
-			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
-			EdgeClientRequest(EventTime, ClientNode, false);*/
-		}
-		else if (ClientNode->VideoRequestsID[ReceivePieceID] != NumEdges){//他のエッジから次のpieceを取得
-			ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;*/
+			//ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
+			//EdgeClientRequest(EventTime, ClientNode, false);
+
+		if (ClientNode->VideoRequestsID[ReceivePieceID] != NumEdges){//他のエッジから次のpieceを取得
+			
 			if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+				
+				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {//falseだと意味がない　次はedgeClient通信の後に実行されるため実行しない？
+					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+					ConnectedEdgeNode->NumReceiving += 1;
+				}
+				ClientNode->VideoEdgeNode = &(EdgeNodes[ClientNode->VideoRequestsID[ReceivePieceID]]);
 				OverheadTime += 64.0 * 8.0 / ClientNode->VideoEdgeNode->EdgeEdgeBandwidth;
+
 				ClientNode->VideoEdgeNode->EdgeEdgeReadBytes += PieceSize;
 				CloudServer.EdgeDiskIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
 				CloudServer.EdgeNetworkIORead[ClientNode->VideoEdgeNode->ID] += PieceSize;
-				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-					CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-				}
+				CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+				
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 			}
 		}
 		else if(ClientNode->VideoRequestsID[ReceivePieceID] == NumEdges){//クラウドから次のpieceを取得
-			ClientNode->VideoEdgeNode = NULL;
+			
 			if (SearchReceivingWaiting(ClientNode, ReceivePieceID) == false) {
+				
+				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {//意味がない　次はedgeClient通信の後に実行されるため実行しない？
+					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+					ConnectedEdgeNode->NumReceiving += 1;
+				}
+				ClientNode->VideoEdgeNode = NULL;
 				OverheadTime += 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
+
 				CloudNode.CloudEdgeReadBytes += PieceSize;
 				CloudServer.CloudDiskIORead += PieceSize;
 				CloudServer.CloudNetworkIORead += PieceSize;
-				if(IsStoreHotCache(ClientNode, ReceivePieceID)) {
-					CloudServer.EdgeDiskIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-					CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
-				}
+				CloudServer.EdgeNetworkIOWrite[ConnectedEdgeNode->ID] += PieceSize;
+
 				CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID);
 			}
 		}
@@ -1631,7 +1767,7 @@ void EventParser() {
 	}
 	switch (TopEvent->EventID) {
 	case CLIENTONEVENT:
-		printf("On:%lf\tID%d\tReciving%d\tReceived%d\tLast:%lf\tAve:%lf\tMax:%lf\n", TopEvent->Time, ((clientnode*)(TopEvent->ClientNode))->ID, NumReceivingClients, NumReceivedClients, LastSumInterruptDuration,AverageInterruptDuration / NumReceivedClients,MaximumInterruptDuration);
+		printf("OnTime:%lf\tID%d\tReciving%d\tReceived%d\tLast:%lf\tAve:%lf\tMax:%lf\n", TopEvent->Time, ((clientnode*)(TopEvent->ClientNode))->ID, NumReceivingClients, NumReceivedClients, LastSumInterruptDuration,AverageInterruptDuration / NumReceivedClients,MaximumInterruptDuration);//ClientIntterupt　最後　全ての平均　最大
 		ExecuteClientOnEvent(TopEvent->Time, (clientnode*)(TopEvent->ClientNode));
 		break;
 	case EDGECLIENTFETCHEVENT:
@@ -1718,11 +1854,14 @@ void InitializeCloudNode(double CloudEdgeBandwidth) {
 	CloudNode.State = ONSTATE;
 	CloudNode.CloudEdgeReadBytes= 0.0;
 	CloudNode.CloudEdgeBandwidth = CloudEdgeBandwidth;
+	CloudNode.CloudEdgeSendPieceID = -1;
+	CloudNode.CloudEdgeSendVideoID = -1;
+	CloudNode.CloudEdgeSendEdgeID = -1;
 
 	for(int i=0; i<NumEdges; i++){
 		for(int j=0; j<NumVideos; j++){
 			for(int k=0; k<NumPieces; k++){
-				CloudServer.ExsistPiece[i][j][k]=0;
+				CloudServer.ExsistPiece[i][j][k]=-1;
 			}
 		}
 	}
@@ -1772,6 +1911,10 @@ void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
 		EdgeNodes[i].EdgeEdgeReceivePieceID = -1;
 		EdgeNodes[i].EdgeEdgeReceiveVideoID = -1;
 		EdgeNodes[i].EdgeEdgeReceiveEdgeNode=NULL;
+		EdgeNodes[i].EdgeEdgeSendPieceID = -1;
+		EdgeNodes[i].EdgeEdgeSendVideoID = -1;
+		EdgeNodes[i].EdgeEdgeSendEdgeID = -1;
+		EdgeNodes[i].NumReceiving = 0;
 	}
 
 	//映像IDは若いEdgeIDから順番
@@ -1868,10 +2011,20 @@ void Simulate() {
 
 	while (TopEvent->Time < SimulationTime) {
 #ifdef LOG
-		fprintf(LogFile, "time%lf\tevent%d\teventID%d\tclientID%d\tData1,%d\tData2,%d\tvideoID%d\n", TopEvent->Time, TopEvent->EventNum, TopEvent->EventID, TopEvent->ClientNode->ID, TopEvent->Data1, TopEvent->Data2,TopEvent->ClientNode->VideoID);
+		fprintf(LogFile, "time%lf\tevent%d\teventID%d\tclientID%d\tData1,%d\tData2,%d\tn_edge%d\tvideoID%d\n", TopEvent->Time, TopEvent->EventNum, TopEvent->EventID, TopEvent->ClientNode->ID, TopEvent->Data1, TopEvent->Data2,TopEvent->ClientNode->ConnectedEdgeID,TopEvent->ClientNode->VideoID);
 		fflush(LogFile);
 #endif
 		EventParser();
+		//printf("cloud %f %f\n",CloudServer.CloudDiskIORead,CloudServer.CloudNetworkIORead);
+		if(CloudServer.CloudDiskIORead<0||CloudServer.CloudNetworkIORead<0){
+			int cloudServerGets=112;
+		}
+		for(int i=0;i<NumEdges;i++){
+			//printf("%d %f %f %f %f \n",i,CloudServer.EdgeDiskIORead[i],CloudServer.EdgeNetworkIORead[i],CloudServer.EdgeDiskIOWrite[i],CloudServer.EdgeNetworkIOWrite[i]);
+			if(CloudServer.EdgeDiskIORead[i] <0 || CloudServer.EdgeNetworkIORead[i] <0 || CloudServer.EdgeDiskIOWrite[i]<0 || CloudServer.EdgeNetworkIOWrite[i]<0 ||CloudServer.EdgeDiskIOWrite[i]>CloudServer.EdgeNetworkIOWrite[i]){
+				int cloudServerGet=111;
+			}
+		}
 		CurrentEvent = TopEvent;
 		TopEvent = TopEvent->Next;
 		delete CurrentEvent;
@@ -1896,16 +2049,16 @@ void EvaluateLambda() {
 	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt, EdgeVolume;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth = 1000000000000.0;//1Tbps
-	EdgeEdgeBandwidth =  1000000000000.0;//1Tbps
-	EdgeClientBandwidth =   1000000000.0;//1Gbps
+	CloudEdgeBandwidth =   1000000000.0;//1Tbps
+	EdgeEdgeBandwidth =    1000000000.0;//1Tbps
+	EdgeClientBandwidth =   100000000.0;//1Gbps
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 60 * 30.0;//視聴時間 30*60
+	Duration = 30 * 60.0;//視聴時間 30*60
 	PieceSize = (int)(10.0*BitRate / 8);//5秒
 	NumPrePieces = 0;//下で変えてる  360piecesh
-	SimulationTime = 5.0 * 60 * 60;//5*60*60
+	SimulationTime = 1.0 * 60 * 60;//5*60*60
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
@@ -1917,12 +2070,12 @@ void EvaluateLambda() {
 	for (i = 0; i <= 0; i++) {
 		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
-		for (j = 15; j <= 15; j++) {//15
+		for (j = 10; j <= 10; j++) {//15
 			if (j == 0)AverageArrivalInterval = 12;//12
 			else AverageArrivalInterval = j ;//j
 			MinAveInterrupt = 1.0e32;
 			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
-			for (l = 1; l <= 1; l++) {//3
+			for (l = 5; l <= 5; l++) {//3
 				if (l >= 0) HotCacheNumPieces = (double)l*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
 				AveInterruptDuration = 0.0;
