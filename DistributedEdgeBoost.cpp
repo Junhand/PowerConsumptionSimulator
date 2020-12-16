@@ -146,6 +146,7 @@ double VarianceArrivalInterval;
 unsigned int PieceSize;
 double BitRate;
 double Duration;
+double SegmentTime;
 double SimulationTime;
 double BandwidthWaver;
 int NumEdges;
@@ -379,6 +380,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	int whichNode[NumPieces][NumEdges+1];
 	int existCount = 0;
 	int EdgeOrCloudFlag = 1;
+	
 	for(int i=0;i<NumPieces; i++){
 		for(int j=0;j<=NumEdges;j++){
 			whichNode[i][j]=0;
@@ -1550,7 +1552,7 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 	EdgeEdgeWaiting(EventTime, FromEdgeNode);
 	//OverheadTime = 64.0 * 8.0 / FromEdgeNode->EdgeEdgeBandwidth;
 	//Direct
-	if ((Stored||Direct) && ReceivedPieceID != NumPieces - 1) {
+	if ((Stored||Direct||IsStoreHotCache(ClientNode, ReceivedPieceID)) && ReceivedPieceID != NumPieces - 1) {
 		bool Store = false;
 		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->EdgeEdgeSearchedHotCachePosition), true)) {
 			ReceivedPieceID = ToEdgeNode->HotCache[ClientNode->EdgeEdgeSearchedHotCachePosition].PieceID;
@@ -1683,7 +1685,7 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 
 	//OverheadTime = 64.0 * 8.0 / CloudNode.CloudEdgeBandwidth;
 	//Direct
-	if ((Stored||Direct) && ReceivedPieceID != NumPieces - 1) {
+	if ((Stored||Direct||IsStoreHotCache(ClientNode, ReceivedPieceID)) && ReceivedPieceID != NumPieces - 1) {
 		bool Store = false;
 		if (SearchHotCache(ClientNode, ReceivedPieceID + 1, &(ClientNode->CloudEdgeSearchedHotCachePosition), true)) {//すでに次のpieceがキャッシュされているか確認
 			ReceivedPieceID = ConnectedEdgeNode->HotCache[ClientNode->CloudEdgeSearchedHotCachePosition].PieceID;
@@ -2040,7 +2042,7 @@ void Simulate() {
 		fflush(LogFile);
 #endif
 		EventParser();
-		printf("cloud %f %f\n",CloudServer.CloudDiskIORead,CloudServer.CloudNetworkIORead);
+		/*printf("cloud %f %f\n",CloudServer.CloudDiskIORead,CloudServer.CloudNetworkIORead);
 		if(CloudServer.CloudDiskIORead<0||CloudServer.CloudNetworkIORead<0){
 			int cloudServerGets=112;
 		}
@@ -2049,7 +2051,7 @@ void Simulate() {
 			if(CloudServer.EdgeDiskIORead[i] <0 || CloudServer.EdgeNetworkIORead[i] <0 || CloudServer.EdgeDiskIOWrite[i]<0 || CloudServer.EdgeNetworkIOWrite[i]<0 ||CloudServer.EdgeDiskIOWrite[i]>CloudServer.EdgeNetworkIOWrite[i]){
 				int cloudServerGet=111;
 			}
-		}
+		}*/
 		CurrentEvent = TopEvent;
 		TopEvent = TopEvent->Next;
 		delete CurrentEvent;
@@ -2074,16 +2076,17 @@ void EvaluateLambda() {
 	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt, EdgeVolume;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =   1000000000.0;//1Tbps
-	EdgeEdgeBandwidth =    1000000000.0;//1Tbps
-	EdgeClientBandwidth =   100000000.0;//1Gbps
+	CloudEdgeBandwidth =  1000000000.0;//1Gbps
+	EdgeEdgeBandwidth =   1000000000.0;//1Gbps
+	EdgeClientBandwidth = 1000000000.0;//100Mbps
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
 	Duration = 30 * 60.0;//視聴時間 30*60
-	PieceSize = (int)(10.0*BitRate / 8);//5秒
+	SegmentTime = 10.0;
+	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	NumPrePieces = 0;//下で変えてる  360piecesh
-	SimulationTime = 1.0 * 60 * 60;//5*60*60
+	SimulationTime = 10.0 * 60 * 60;//5*60*60
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
@@ -2092,7 +2095,7 @@ void EvaluateLambda() {
 
 	sprintf(FileName, "EvaluateLambda.dat");
 	ResultFile = myfopen(FileName, "w");
-	for (i = 0; i <= 0; i++) {
+	for (i = 1; i <= 1; i++) {
 		fprintf(ResultFile, "%d pieces\tEdgeBoost (10 pieces)\t\t\t\t\t\t\t\tEdgeBoost (20 pieces)\t\t\t\t\t\t\t\tEdgeBoost (30 pieces)\t\t\t\t\t\t\t\tNo EdgeBoost\n", HotCacheNumPieces);
 		n = 2;//行数
 		for (j = 1; j <= 1; j++) {//15
@@ -2100,7 +2103,7 @@ void EvaluateLambda() {
 			else AverageArrivalInterval = j ;//j
 			MinAveInterrupt = 1.0e32;
 			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
-			for (l = 5; l <= 5; l++) {//3
+			for (l = 100; l <= 100; l++) {//3
 				if (l >= 0) HotCacheNumPieces = (double)l*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 				else NumPrePieces = 0;
 				AveInterruptDuration = 0.0;
