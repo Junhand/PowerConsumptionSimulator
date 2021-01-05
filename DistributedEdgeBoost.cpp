@@ -232,8 +232,8 @@ double EdgePowerConsumption[8][CPUCORE+1]={{75.5072250366211,78.5007400512695,83
 											119.898178100585,124.181518554687,127.584671020507,130.224288940429,132.468795776367,134.572662353515,136.689971923828,138.903488159179,141.239547729492}
 											};
 
-double MaxPowerConsumption = 36.89426804;//増加量の最大
-double MinPowerConsumption = 0.759689331;//増加量の最小
+double MaxPowerConsumption = 155.6061096;//最大
+double MinPowerConsumption = 56.05582809;//増加量の最小
 double NormalizeCloudPowerConsumption[CPUCORE+1];
 double NormalizeEdgePowerConsumption[8][CPUCORE+1];
 
@@ -446,11 +446,42 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	double PredictCloudBandwidth;
 	double tempAlpha, tempBeta, cost;
 	int AccessNum;
-	double maxCost=-1;
+	double minCost=100;
 	double index=-1;
 	int edgeCount=0;
 	int i,j,k;
-	
+
+	printf("cloud DiskOut %.2fMB NICOut %.2fMB\n",CloudServer.CloudDiskIORead/1000000,CloudServer.CloudNetworkIORead/1000000);
+	if(CloudServer.CloudDiskIORead<0||CloudServer.CloudNetworkIORead<0){
+		int cloudServerGets=112;
+	}
+	for(int i=0;i<NumEdges;i++){
+		printf("%d DiskOut %.2f NICOut %.2f DiskIn %.2f NICIn %.2f \n",i,CloudServer.EdgeDiskIORead[i]/1000000,CloudServer.EdgeNetworkIORead[i]/1000000,CloudServer.EdgeDiskIOWrite[i]/1000000,CloudServer.EdgeNetworkIOWrite[i]/1000000);
+		if(CloudServer.EdgeDiskIORead[i] <0 || CloudServer.EdgeNetworkIORead[i] <0 || CloudServer.EdgeDiskIOWrite[i]<0 || CloudServer.EdgeNetworkIOWrite[i]<0){
+			int cloudServerGet=111;
+		}
+	}
+
+
+	if(CloudNode.NumPreviousSending==0) CloudEdgeNumSending=1.0;
+	else CloudEdgeNumSending = (double)CloudNode.NumPreviousSending;
+	AccessNum = CloudNode.NumPreviousSending + 1;
+	if(AccessNum>16) AccessNum=16;
+	fprintf(ServerResultFile, "%.0lf\t%d\t%d\t%.2lf\t%.2lf\t%.2lf\t",AverageArrivalInterval, ClientNode->ID, CloudNode.NumSending, CloudNode.CloudEdgeBandwidth/CloudEdgeNumSending, CloudServer.CloudPowerConsumption,CloudPowerConsumption[AccessNum]);
+	for(int k=0; k< NumEdges;k++){
+		if(EdgeNodes[k].NumSending==0) EdgeEdgeNumSending=1;
+		else  EdgeEdgeNumSending = (double)EdgeNodes[k].NumSending;
+		if(EdgeNodes[k].NumClientSending==0) EdgeClientNumSending=1;
+		else EdgeClientNumSending = (double)EdgeNodes[k].NumClientSending;
+		AccessNum = EdgeNodes[k].NumReceiving + EdgeNodes[k].NumPreviousSending + EdgeNodes[k].NumPreviousClientSending;
+		if(AccessNum>16) AccessNum=16;
+		fprintf(ServerResultFile, "%d\t%d\t%d\t%.2lf\t%.2lf\t%.2lf\t%.2lf\t",EdgeNodes[k].NumSending, EdgeNodes[k].NumClientSending, EdgeNodes[k].NumReceiving, EdgeNodes[k].EdgeEdgeBandwidth/EdgeEdgeNumSending, EdgeNodes[k].EdgeClientBandwidth/EdgeClientNumSending, CloudServer.EdgePowerConsumption[k],EdgePowerConsumption[k][AccessNum]);
+	}
+	fprintf(ServerResultFile,"\n");
+	fflush(ServerResultFile);
+
+	if(numOfExsistPieceID == NumPieces) return;//エッジに全てのpieceがあるとき
+
 	for(i=0;i<NumPieces; i++){
 		for(int j=0;j<=NumEdges;j++){
 			whichNode[i][j]=0;
@@ -515,18 +546,18 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						if(AccessNum>16) AccessNum=16;
 						PredictEdgeBandwidth[k] = EdgeNodes[k].EdgeEdgeBandwidth/(EdgeNodes[k].NumSending+1);
 						cost = tempAlpha * PredictEdgeBandwidth[k] / EdgeNodes[k].EdgeEdgeBandwidth + tempBeta * NormalizeEdgePowerConsumption[k][AccessNum];
-						if(maxCost<cost){
-							maxCost=cost;
+						if(minCost>cost){
+							minCost=cost;
 							index=k;
 						}
 					}else{
 						AccessNum = CloudNode.NumPreviousSending + 1;
 						if(AccessNum>16) AccessNum=16;
 						PredictCloudBandwidth = CloudNode.CloudEdgeBandwidth/(CloudNode.NumSending+1);
-						cost = tempAlpha * PredictCloudBandwidth / CloudNode.CloudEdgeBandwidth + tempBeta * NormalizeCloudPowerConsumption[AccessNum];
-						if(maxCost<cost){
+						cost = tempAlpha * (1 - PredictCloudBandwidth / CloudNode.CloudEdgeBandwidth) + tempBeta * NormalizeCloudPowerConsumption[AccessNum];
+						if(minCost>cost){
 							if(j==0) EdgeOrCloudFlag = -1;//最初クラウドから取得
-							maxCost=cost;
+							minCost=cost;
 							index=k;
 						}
 						ClientNode->VideoRequestsID[j] = index;
@@ -536,36 +567,6 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			}
 		}
 	}
-	
-	printf("cloud DiskOut %.2fMB NICOut %.2fMB\n",CloudServer.CloudDiskIORead/1000000,CloudServer.CloudNetworkIORead/1000000);
-	if(CloudServer.CloudDiskIORead<0||CloudServer.CloudNetworkIORead<0){
-		int cloudServerGets=112;
-	}
-	for(int i=0;i<NumEdges;i++){
-		printf("%d DiskOut %.2f NICOut %.2f DiskIn %.2f NICIn %.2f \n",i,CloudServer.EdgeDiskIORead[i]/1000000,CloudServer.EdgeNetworkIORead[i]/1000000,CloudServer.EdgeDiskIOWrite[i]/1000000,CloudServer.EdgeNetworkIOWrite[i]/1000000);
-		if(CloudServer.EdgeDiskIORead[i] <0 || CloudServer.EdgeNetworkIORead[i] <0 || CloudServer.EdgeDiskIOWrite[i]<0 || CloudServer.EdgeNetworkIOWrite[i]<0){
-			int cloudServerGet=111;
-		}
-	}
-
-
-	if(CloudNode.NumPreviousSending==0) CloudEdgeNumSending=1.0;
-	else CloudEdgeNumSending = (double)CloudNode.NumPreviousSending;
-	AccessNum = CloudNode.NumPreviousSending + 1;
-	if(AccessNum>16) AccessNum=16;
-	fprintf(ServerResultFile, "%.0lf\t%d\t%d\t%.2lf\t%.2lf\t%.2lf\t",AverageArrivalInterval, ClientNode->ID, CloudNode.NumSending, CloudNode.CloudEdgeBandwidth/CloudEdgeNumSending, CloudServer.CloudPowerConsumption,CloudPowerConsumption[AccessNum]);
-	for(int k=0; k< NumEdges;k++){
-		if(EdgeNodes[k].NumSending==0) EdgeEdgeNumSending=1;
-		else  EdgeEdgeNumSending = (double)EdgeNodes[k].NumSending;
-		if(EdgeNodes[k].NumClientSending==0) EdgeClientNumSending=1;
-		else EdgeClientNumSending = (double)EdgeNodes[k].NumClientSending;
-		AccessNum = EdgeNodes[k].NumReceiving + EdgeNodes[k].NumPreviousSending + EdgeNodes[k].NumPreviousClientSending;
-		if(AccessNum>16) AccessNum=16;
-		fprintf(ServerResultFile, "%d\t%d\t%d\t%.2lf\t%.2lf\t%.2lf\t%.2lf\t",EdgeNodes[k].NumSending, EdgeNodes[k].NumClientSending, EdgeNodes[k].NumReceiving, EdgeNodes[k].EdgeEdgeBandwidth/EdgeEdgeNumSending, EdgeNodes[k].EdgeClientBandwidth/EdgeClientNumSending, CloudServer.EdgePowerConsumption[k],EdgePowerConsumption[k][AccessNum]);
-	}
-	fprintf(ServerResultFile,"\n");
-	fflush(ServerResultFile);
-
 	return EdgeOrCloudFlag;//-1はcloud 1はedgeから最初のsegmentを取得
 }
 
@@ -1460,7 +1461,7 @@ void ExecuteEdgeClientFetchEvent(double EventTime, struct clientnode* ClientNode
 	if (Hit == true) {//一番近いedgeにpieceがある
 		if(numOfExsistPieceID == NumPieces){//全てのpieceを一番近いedgeが持っている
 			//(ConnectedEdgeNode->HotCache[ClientNode->EdgeClientSearchedHotCachePosition].Voted)--;
-			//CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
+			CloudServerRequest(EventTime, ClientNode, VideoID, ReceivePieceID);
 			ConnectedEdgeNode->EdgeClientReadBytes += PieceSize;
 			CloudServer.EdgeDiskIORead[ConnectedEdgeNode->ID] += PieceSize;
 			CloudServer.EdgeNetworkIORead[ConnectedEdgeNode->ID] += PieceSize;
@@ -2295,19 +2296,11 @@ void Initialize() {
 	MinimumInterruptDuration = 1.0e32;
 	for(int i=0; i<NumEdges; i++){
 		for(int j=0; j<CPUCORE+1; j++){
-			if(j==0) {
-				NormalizeEdgePowerConsumption[i][j]=0;
-			}else{
-				NormalizeEdgePowerConsumption[i][j] = 1 - ( ( EdgePowerConsumption[i][j] - EdgePowerConsumption[i][j-1] - MinPowerConsumption ) / MaxMinPowerConsumption );
-			}
+			NormalizeEdgePowerConsumption[i][j] = ( EdgePowerConsumption[i][j] - MinPowerConsumption ) / MaxMinPowerConsumption );
 		}
 	}
 	for(int j=0; j<CPUCORE+1; j++){
-		if(j==0){
-			NormalizeCloudPowerConsumption[j]=0;
-		}else{
-			NormalizeCloudPowerConsumption[j] = 1 - ( ( CloudPowerConsumption[j] - CloudPowerConsumption[j-1] - MinPowerConsumption ) / MaxMinPowerConsumption );
-		}
+			NormalizeCloudPowerConsumption[j] = ( CloudPowerConsumption[j] - MinPowerConsumption ) / MaxMinPowerConsumption );
 	}
 
 	TopEvent = NULL;
@@ -2588,7 +2581,7 @@ void EvaluateLambda() {
 			
 			MinAveInterrupt = 1.0e32;
 			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
-			for (l = 1; l <= 10; l++) {//3
+			for (l = 2; l <= 10; l++) {//3
 				if (l == 0) AverageArrivalInterval = 12;//12
 				else AverageArrivalInterval = l ;//j
 				
@@ -2617,6 +2610,11 @@ void EvaluateLambda() {
 				AveNumInterrupt /= NSIM;
 				EdgeVolume = (double)HotCacheNumPieces*PieceSize;
 				fprintf(ResultFile, "%lf\t%.0lf\t%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t\n",AverageArrivalInterval,EdgeVolume, AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "\t\t%.2lf\t",CloudServer.CloudPowerConsumption);
+				for(int k=0; k< NumEdges;k++){
+					fprintf(ResultFile, "%.2lf\t",CloudServer.EdgePowerConsumption[k]);
+				}
+				fprintf(ResultFile,"\n");
 				fflush(ResultFile);
 				fclose(LogFile);
 
@@ -2713,7 +2711,7 @@ void EvaluateCloudEdgeBandwidth() {
 
 
 void EvaluateNumPrePieces() {
-	int i, j, k, l, n;
+	int i, j, k, l, m, n;
 	char FileName[64];
 	FILE* ResultFile;
 	double CloudEdgeBandwidth, EdgeEdgeBandwidth, EdgeClientBandwidth;
@@ -2775,6 +2773,10 @@ void EvaluateNumPrePieces() {
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
 				fprintf(ResultFile, "%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t", AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes, TotalEdgeEdgeWriteBytes, TotalEdgeEdgeReadBytes, TotalCloudEdgeWriteBytes, TotalCloudEdgeReadBytes);
+				for(m=0;m<NumEdges;m++){
+					fprintf(ResultFile,"%.0lf\t",CloudServer.EdgePowerConsumption[m]);
+				}
+				fpirntf(ResultFile,"%.0lf\t",CloudServer.CloudPowerConsumption);
 				fflush(ResultFile);
 
 			}
