@@ -480,7 +480,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	fprintf(ServerResultFile,"\n");
 	fflush(ServerResultFile);
 
-	if(numOfExsistPieceID == NumPieces) return;//エッジに全てのpieceがあるとき
+	if(numOfExsistPieceID == NumPieces) return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
 
 	for(i=0;i<NumPieces; i++){
 		for(int j=0;j<=NumEdges;j++){
@@ -561,7 +561,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 							index=k;
 						}
 						ClientNode->VideoRequestsID[j] = index;
-						maxCost=-1;
+						minCost=100;
 					}
 				}
 			}
@@ -2296,11 +2296,11 @@ void Initialize() {
 	MinimumInterruptDuration = 1.0e32;
 	for(int i=0; i<NumEdges; i++){
 		for(int j=0; j<CPUCORE+1; j++){
-			NormalizeEdgePowerConsumption[i][j] = ( EdgePowerConsumption[i][j] - MinPowerConsumption ) / MaxMinPowerConsumption );
+			NormalizeEdgePowerConsumption[i][j] = ( EdgePowerConsumption[i][j] - MinPowerConsumption ) / MaxMinPowerConsumption;
 		}
 	}
 	for(int j=0; j<CPUCORE+1; j++){
-			NormalizeCloudPowerConsumption[j] = ( CloudPowerConsumption[j] - MinPowerConsumption ) / MaxMinPowerConsumption );
+			NormalizeCloudPowerConsumption[j] = ( CloudPowerConsumption[j] - MinPowerConsumption ) / MaxMinPowerConsumption;
 	}
 
 	TopEvent = NULL;
@@ -2776,7 +2776,7 @@ void EvaluateNumPrePieces() {
 				for(m=0;m<NumEdges;m++){
 					fprintf(ResultFile,"%.0lf\t",CloudServer.EdgePowerConsumption[m]);
 				}
-				fpirntf(ResultFile,"%.0lf\t",CloudServer.CloudPowerConsumption);
+				fprintf(ResultFile,"%.0lf\t",CloudServer.CloudPowerConsumption);
 				fflush(ResultFile);
 
 			}
