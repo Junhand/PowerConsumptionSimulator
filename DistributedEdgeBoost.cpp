@@ -465,7 +465,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 
 	if(CloudNode.NumPreviousSending==0) CloudEdgeNumSending=1.0;
 	else CloudEdgeNumSending = (double)CloudNode.NumPreviousSending;
-	AccessNum = CloudNode.NumPreviousSending + 1;
+	AccessNum = CloudNode.NumPreviousSending;
 	if(AccessNum>16) AccessNum=16;
 	fprintf(ServerResultFile, "%.0lf\t%d\t%d\t%.2lf\t%.2lf\t%.2lf\t",AverageArrivalInterval, ClientNode->ID, CloudNode.NumSending, CloudNode.CloudEdgeBandwidth/CloudEdgeNumSending, CloudServer.CloudPowerConsumption,CloudPowerConsumption[AccessNum]);
 	for(int k=0; k< NumEdges;k++){
@@ -545,7 +545,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						AccessNum = EdgeNodes[k].NumReceiving + EdgeNodes[k].NumPreviousSending + EdgeNodes[k].NumPreviousClientSending + 1;
 						if(AccessNum>16) AccessNum=16;
 						PredictEdgeBandwidth[k] = EdgeNodes[k].EdgeEdgeBandwidth/(EdgeNodes[k].NumSending+1);
-						cost = tempAlpha * PredictEdgeBandwidth[k] / EdgeNodes[k].EdgeEdgeBandwidth + tempBeta * NormalizeEdgePowerConsumption[k][AccessNum];
+						cost = tempAlpha *(1 - PredictEdgeBandwidth[k] / EdgeNodes[k].EdgeEdgeBandwidth) + tempBeta * NormalizeEdgePowerConsumption[k][AccessNum];
 						if(minCost>cost){
 							minCost=cost;
 							index=k;
@@ -1808,6 +1808,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 
 	if (ReceivedPieceID == NumPieces - 1) {
 		ClientFinishReception(EventTime, ClientNode);
+		ConnectedEdgeNode->NumPreviousClientSending = ConnectedEdgeNode->NumClientSending;
 	}
 	else {
 		ReceivePieceID = ClientNode->EdgeClientReceivedPieceID + 1;
@@ -1875,6 +1876,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 			ConnectedEdgeNode->NumClientSending += 1;
 			EdgeClientRequest(EventTime, ClientNode, false);
 		}
+		ConnectedEdgeNode->NumPreviousClientSending = ConnectedEdgeNode->NumClientSending;
 	}
 }
 void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,int ReceivedPieceID, bool Stored) {
@@ -1959,7 +1961,10 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 			ReceivedPieceID = ToEdgeNode->HotCache[ClientNode->EdgeEdgeSearchedHotCachePosition].PieceID;
 		}
 		ReceivePieceID = ReceivedPieceID + 1;
-		if(ReceivePieceID == NumPieces) return;
+		if(ReceivePieceID == NumPieces) {
+			FromEdgeNode->NumPreviousSending = FromEdgeNode->NumSending;
+			return;
+		}
 		while(ClientNode->VideoRequestsID[ReceivePieceID] == ToEdgeNode->ID){
 			ReceivePieceID++;
 			printf("Serached but exsit piece (EdgeEdge)\n");
@@ -2033,6 +2038,7 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 		//FromEdgeNode->EdgeEdgeReadBytes += PieceSize;
 		//EdgeEdgeRequest(EventTime + OverheadTime, ClientNode, ReceivedPieceID);
 	}
+	FromEdgeNode->NumPreviousSending = FromEdgeNode->NumSending;
 }
 void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode, int ReceivedPieceID, bool Stored) {
 	struct edgenode* ConnectedEdgeNode = ClientNode->ConnectedEdgeNode;
@@ -2118,7 +2124,10 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 			ReceivedPieceID = ConnectedEdgeNode->HotCache[ClientNode->CloudEdgeSearchedHotCachePosition].PieceID;
 		}
 		ReceivePieceID = ReceivedPieceID + 1;  //ReceivedではなくReceive   次にどこを取ってくるか決定
-		if(ReceivePieceID == NumPieces) return;
+		if(ReceivePieceID == NumPieces) {
+			CloudNode.NumPreviousSending = CloudNode.NumSending;
+			return;
+		}
 		while(ClientNode->VideoRequestsID[ReceivePieceID] == ConnectedEdgeNode->ID){
 			ReceivePieceID++;
 			printf("Serached but exsit piece(CloudEdge)\n");
@@ -2192,7 +2201,7 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 		//CloudNode.CloudEdgeReadBytes += PieceSize;
 		//CloudEdgeRequest(EventTime + OverheadTime, ClientNode, ReceivedPieceID);
 	}
-
+	CloudNode.NumPreviousSending = CloudNode.NumSending;
 }
 
 void ExecuteClientOnEvent(double EventTime,struct clientnode* ClientNode) {
@@ -2544,6 +2553,7 @@ void EvaluateLambda() {
 	FILE* ResultFile;
 	double CloudEdgeBandwidth, EdgeEdgeBandwidth, EdgeClientBandwidth;
 	double AveInterruptDuration, AveNumInterrupt, MaxInterrupt, MinInterrupt, MinAveInterrupt, EdgeVolume;
+	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
 	CloudEdgeBandwidth =  1000000000.0;//1Gbps
@@ -2576,7 +2586,7 @@ void EvaluateLambda() {
 		beta = 1-i;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = 11.25*1; j <= 11.25*1; j+=11.25) {//15
+		for (j = 112.5/8*0.8; j <= 112.5/8*0.8; j+=112.5/8*0.1) {//15
 			HotCacheNumPieces = (double)j*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
@@ -2609,11 +2619,16 @@ void EvaluateLambda() {
 				AveInterruptDuration /= NSIM;
 				AveNumInterrupt /= NSIM;
 				EdgeVolume = (double)HotCacheNumPieces*PieceSize;
-				fprintf(ResultFile, "%lf\t%.0lf\t%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t\n",AverageArrivalInterval,EdgeVolume, AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
-				fprintf(ResultFile, "\t\t%.2lf\t",CloudServer.CloudPowerConsumption);
+				fprintf(ResultFile, "%lf\t%.0lf\t%lf\t%lf\t%d\t%lf\t%lf\t%lf\t%lf\t%lf",AverageArrivalInterval,EdgeVolume, AveInterruptDuration, AveNumInterrupt, NumReceivedClients, TotalEdgeClientReadBytes,TotalEdgeEdgeWriteBytes,TotalEdgeEdgeReadBytes,TotalCloudEdgeWriteBytes,TotalCloudEdgeReadBytes);
+				fprintf(ResultFile, "\t%.2lf",CloudServer.CloudPowerConsumption);
+				TotalPowerConsumption += CloudServer.CloudPowerConsumption;
 				for(int k=0; k< NumEdges;k++){
-					fprintf(ResultFile, "%.2lf\t",CloudServer.EdgePowerConsumption[k]);
+					fprintf(ResultFile, "\t%.2lf",CloudServer.EdgePowerConsumption[k]);
+					TotalPowerConsumption += CloudServer.EdgePowerConsumption[k];
 				}
+				fprintf(ResultFile,"\t%.2lf",TotalPowerConsumption);
+				TotalPowerConsumption = 0;
+
 				fprintf(ResultFile,"\n");
 				fflush(ResultFile);
 				fclose(LogFile);
@@ -2623,11 +2638,12 @@ void EvaluateLambda() {
 			fprintf(ServerResultFile, "\n");
 			n++;
 		}
-		while (n < 51) {
-			fprintf(ResultFile, "\n");
-			fprintf(ServerResultFile, "\n");
-			n++;
-		}
+	
+		fprintf(ResultFile, "\n");
+		fprintf(ResultFile, "\n");
+		fprintf(ServerResultFile, "\n");
+		fprintf(ServerResultFile, "\n");
+		
 	}
 	fclose(ResultFile);
 	fclose(ServerResultFile);
