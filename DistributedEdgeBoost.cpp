@@ -436,15 +436,16 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 }
 
 int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int VideoID, int PieceID) {
-	int whichNode[NumPieces][NumEdges+1];
+	int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 	int existCount = 0;
 	int EdgeOrCloudFlag = 1;
 	double CloudEdgeNumSending,EdgeEdgeNumSending,EdgeClientNumSending;
-	double PredictEdgePowerConsumption[NumEdges][CPUCORE+1];
+	double PredictEdgePowerConsumption[MAXNUMEDGENODES][CPUCORE+1];
 	double PredictCloudPowerConsumption[CPUCORE+1];
-	double PredictEdgeBandwidth[NumEdges];
+	double PredictEdgeBandwidth[MAXNUMEDGENODES];
 	double PredictCloudBandwidth;
 	double tempAlpha, tempBeta, cost;
+	double MinResponseTime,MaxResponseTime;
 	int AccessNum;
 	double minCost=100;
 	double index=-1;
@@ -530,6 +531,9 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 		edgeCount = 0;
 	}*/
 
+	MinResponseTime = PieceSize*8/(CloudNode.CloudEdgeBandwidth/1);
+	MaxResponseTime = PieceSize*8/(CloudNode.CloudEdgeBandwidth/200); 
+
 	for(j=0; j<NumPieces; j++){//各pieceの取得場所決定(alpha, beta)
 		if(whichNode[j][ClientNode->ConnectedEdgeID] != 1){
 			tempAlpha = alpha;
@@ -545,7 +549,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						AccessNum = EdgeNodes[k].NumReceiving + EdgeNodes[k].NumPreviousSending + EdgeNodes[k].NumPreviousClientSending + 1;
 						if(AccessNum>16) AccessNum=16;
 						PredictEdgeBandwidth[k] = EdgeNodes[k].EdgeEdgeBandwidth/(EdgeNodes[k].NumSending+1);
-						cost = tempAlpha *(1 - PredictEdgeBandwidth[k] / EdgeNodes[k].EdgeEdgeBandwidth) + tempBeta * NormalizeEdgePowerConsumption[k][AccessNum];
+						cost = tempAlpha * (PieceSize*8 / PredictEdgeBandwidth[k] - MinResponseTime)/(MaxResponseTime-MinResponseTime) + tempBeta * NormalizeEdgePowerConsumption[k][AccessNum];
 						if(minCost>cost){
 							minCost=cost;
 							index=k;
@@ -554,7 +558,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						AccessNum = CloudNode.NumPreviousSending + 1;
 						if(AccessNum>16) AccessNum=16;
 						PredictCloudBandwidth = CloudNode.CloudEdgeBandwidth/(CloudNode.NumSending+1);
-						cost = tempAlpha * (1 - PredictCloudBandwidth / CloudNode.CloudEdgeBandwidth) + tempBeta * NormalizeCloudPowerConsumption[AccessNum];
+						cost = tempAlpha * (PieceSize*8 / PredictCloudBandwidth - MinResponseTime)/(MaxResponseTime-MinResponseTime) + tempBeta * NormalizeCloudPowerConsumption[AccessNum];
 						if(minCost>cost){
 							if(j==0) EdgeOrCloudFlag = -1;//最初クラウドから取得
 							minCost=cost;
@@ -2586,7 +2590,7 @@ void EvaluateLambda() {
 		beta = 1-i;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = 112.5/8*0.8; j <= 112.5/8*0.8; j+=112.5/8*0.1) {//15
+		for (j = 112.5/8*0.5; j <= 112.5/8*0.5; j+=112.5/8*0.5) {//15
 			HotCacheNumPieces = (double)j*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
