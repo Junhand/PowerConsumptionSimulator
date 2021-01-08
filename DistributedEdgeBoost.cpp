@@ -204,8 +204,8 @@ int PredictDeleteHotCache[MAXNUMEDGENODES];
 int numOfExsistPieceID=0;
 struct cloudserver CloudServer;
 
-double CloudPowerConsumption[CPUCORE+1] = {56.05582809,92.95009613,101.8073807,112.2240067,120.1051788,123.9835587,125.6780472,127.053833,
-										   128.6921692,130.7683411,133.304657,136.1736145,139.1330872,141.9121094,144.2817841,146.1325378,147.4867859};
+double CloudPowerConsumption[CPUCORE+1] = {72.6111373901367,73.3708267211914,80.09765625,89.1057586669921,109.371032714843,114.578422546386,116.197860717773,118.549942016601,
+											121.804946899414,125.261123657226,128.482513427734,131.525634765625,134.554611206054,137.900344848632,142.114013671875,147.735748291015,154.568893432617};
 
 double EdgePowerConsumption[8][CPUCORE+1]={{75.5072250366211,78.5007400512695,83.9513168334961,96.5199661254882,111.490814208984,115.153198242187,116.738952636718,118.769119262695,
 											121.638977050781,125.254592895507,129.197601318359,133.114532470703,136.868331909179,140.37451171875,143.535095214843,146.291625976562,148.657501220703},
@@ -232,8 +232,8 @@ double EdgePowerConsumption[8][CPUCORE+1]={{75.5072250366211,78.5007400512695,83
 											119.898178100585,124.181518554687,127.584671020507,130.224288940429,132.468795776367,134.572662353515,136.689971923828,138.903488159179,141.239547729492}
 											};
 
-double MaxPowerConsumption = 155.6061096;//最大
-double MinPowerConsumption = 56.05582809;//増加量の最小
+double MaxPowerConsumption = 20.26527405;//増加量の最大
+double MinPowerConsumption = 0.759689331;//増加量の最小
 double NormalizeCloudPowerConsumption[CPUCORE+1];
 double NormalizeEdgePowerConsumption[8][CPUCORE+1];
 
@@ -436,13 +436,13 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 }
 
 int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int VideoID, int PieceID) {
-	int whichNode[NumPieces][NumEdges+1];
+	int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 	int existCount = 0;
 	int EdgeOrCloudFlag = 1;
 	double CloudEdgeNumSending,EdgeEdgeNumSending,EdgeClientNumSending;
-	double PredictEdgePowerConsumption[NumEdges][CPUCORE+1];
+	double PredictEdgePowerConsumption[MAXNUMEDGENODES][CPUCORE+1];
 	double PredictCloudPowerConsumption[CPUCORE+1];
-	double PredictEdgeBandwidth[NumEdges];
+	double PredictEdgeBandwidth[MAXNUMEDGENODES];
 	double PredictCloudBandwidth;
 	double tempAlpha, tempBeta, cost;
 	int AccessNum;
@@ -503,7 +503,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 		whichNode[i][NumEdges] = 1;//cloud has all pieces
 	}
 
-	/*for(j=0; j<NumPieces; j++){//各pieceの取得場所決定(ランダム)
+	for(j=0; j<NumPieces; j++){//各pieceの取得場所決定(ランダム)
 		if(whichNode[j][ClientNode->ConnectedEdgeID] != 1){
 			while(1){
 				if(whichNode[j][existCount]==1){
@@ -528,8 +528,9 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			}
 		}
 		edgeCount = 0;
-	}*/
+	}
 
+	/*
 	for(j=0; j<NumPieces; j++){//各pieceの取得場所決定(alpha, beta)
 		if(whichNode[j][ClientNode->ConnectedEdgeID] != 1){
 			tempAlpha = alpha;
@@ -567,6 +568,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			}
 		}
 	}
+	*/
 	return EdgeOrCloudFlag;//-1はcloud 1はedgeから最初のsegmentを取得
 }
 
@@ -2305,11 +2307,13 @@ void Initialize() {
 	MinimumInterruptDuration = 1.0e32;
 	for(int i=0; i<NumEdges; i++){
 		for(int j=0; j<CPUCORE+1; j++){
-			NormalizeEdgePowerConsumption[i][j] = ( EdgePowerConsumption[i][j] - MinPowerConsumption ) / MaxMinPowerConsumption;
+			if(j==0) NormalizeEdgePowerConsumption[i][j] = 0;
+			else NormalizeEdgePowerConsumption[i][j] = ( EdgePowerConsumption[i][j] - EdgePowerConsumption[i][j-1] - MinPowerConsumption ) / MaxMinPowerConsumption;
 		}
 	}
 	for(int j=0; j<CPUCORE+1; j++){
-			NormalizeCloudPowerConsumption[j] = ( CloudPowerConsumption[j] - MinPowerConsumption ) / MaxMinPowerConsumption;
+			if(j==0) NormalizeCloudPowerConsumption[j] = 0;
+			else NormalizeCloudPowerConsumption[j] = ( CloudPowerConsumption[j] - CloudPowerConsumption[j-1] - MinPowerConsumption ) / MaxMinPowerConsumption;
 	}
 
 	TopEvent = NULL;
@@ -2586,7 +2590,7 @@ void EvaluateLambda() {
 		beta = 1-i;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = 112.5/8*0.8; j <= 112.5/8*0.8; j+=112.5/8*0.1) {//15
+		for (j = 112.5/8*0.5; j <= 112.5/8*0.5; j+=112.5/8*0.1) {//15
 			HotCacheNumPieces = (double)j*1000000000/PieceSize; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
