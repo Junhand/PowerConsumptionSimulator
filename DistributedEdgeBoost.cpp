@@ -2981,21 +2981,21 @@ void EvaluateLambda() {
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 30.0 * 60.0;//視聴時間 30*60
+	Duration = 48 * 60.0 * 60.0;//視聴時間 30*60
 	SegmentTime = 5.0;
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 6*60*60;//24*60*60
+	SimulationTime = 5000;//24*60*60
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
 	NumEdges = 8;//8
 	NumVideos = 100;//900Gb 112.5GB
 	NumPrePieces = 0;
-	NumEdgeServers = 18;//Edge内のサーバの数
-	NumCloudServers = 18;//Cloud内のサーバの数
+	NumEdgeServers = 1;//Edge内のサーバの数
+	NumCloudServers = 1;//Cloud内のサーバの数
 	alpha=0;//ResponseTime
 	beta=1;//PowerConsumption
 
@@ -3015,7 +3015,7 @@ void EvaluateLambda() {
 			
 			MinAveInterrupt = 1.0e32;
 			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
-			for (l = 3; l <= 10; l++) {//3
+			for (l = 10; l <= 10; l++) {//3
 				if (l == 0) AverageArrivalInterval = 12;//12
 				else AverageArrivalInterval = l ;//j
 				
