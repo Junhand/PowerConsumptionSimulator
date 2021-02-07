@@ -11,8 +11,8 @@
 #define MAXNUMCLIENTNODES 1000 //2147483647/96 22369621くらいまでいける
 #define MAXNUMVIDEOS 101
 #define MAXNUMSERVERS 20
-#define MAXHOTCACHE 440000
-#define MAXNUMPIECES 35000
+#define MAXHOTCACHE 1260000
+#define MAXNUMPIECES 210000
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -217,6 +217,8 @@ double FirstSegmentMaxDelayTime = 0;
 bool RandomFlag = false;
 int NumEdgeServers;
 int NumCloudServers;
+
+int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 
 int numOfExsistPieceID=0;
 int SegmentSize;
@@ -572,7 +574,7 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 }*/
 
 int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int VideoID, int PieceID) {
-	int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
+	
 	int existCount = 0;
 	int edgeServerCount[MAXNUMEDGENODES];
 	int cloudServerCount = 0;
@@ -793,8 +795,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 				tempBeta = 0;
 			}
 			if(tempAlpha==1){
-				tempAlpha=0.999;
-				tempBeta=0.001;
+				tempAlpha=0.99999;
+				tempBeta=0.00001;
 			}
 
 			for(k=0; k<NumEdges+1; k++) {
@@ -2985,7 +2987,7 @@ void EvaluateLambda() {
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 48 * 60.0 * 60.0;//視聴時間 30*60
+	Duration = 1000000;//48 * 60.0 * 60.0;//視聴時間 30*60
 	SegmentTime = 5.0;
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
@@ -3008,13 +3010,17 @@ void EvaluateLambda() {
 
 	sprintf(ResultFileName, "ResultLambda.dat");
 	ServerResultFile = myfopen(ResultFileName, "w");
-	for (i = 0; i <= 1.5; i+=0.5) {
+	for (i = 0.0; i <= 1.5; i+=0.5) {
 		alpha = i;
 		beta = 1-i;
+		if(i==0.5){
+			alpha = 0.1;
+			beta = 0.9;
+		}
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.5; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.1) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.1) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
