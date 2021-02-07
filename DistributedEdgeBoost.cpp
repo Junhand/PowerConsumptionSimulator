@@ -574,7 +574,7 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int VideoID, int PieceID) {
 	int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 	int existCount = 0;
-	int edgeServerCount = 0;
+	int edgeServerCount[MAXNUMEDGENODES];
 	int cloudServerCount = 0;
 	int EdgeOrCloudFlag = 1;
 	int CPUOverFlag = 0;
@@ -708,17 +708,20 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	}
 
 	if(RandomFlag){//各pieceの取得場所決定(ランダム)
+		for(i=0; i<NumEdges;i++){
+			edgeServerCount[i] = 0;
+		}
 		for(j=0; j<NumPieces; j++){
 			if(whichNode[j][ClientNode->ConnectedEdgeID] != 1){
 				while(1){
 					if(whichNode[j][existCount]==1){
 						//if(existCount!=NumEdges){//他のエッジから取得 クラウドエッジ合わせてランダムの場合に使用
 						ClientNode->VideoRequestsID[j] = existCount;
-						ClientNode->ServerID[j] = edgeServerCount;
+						ClientNode->ServerID[j] = edgeServerCount[existCount];
+						if(edgeServerCount[existCount]==NumEdgeServers-1) edgeServerCount[existCount]=0;
+						else edgeServerCount[existCount]++;
 						if(existCount==NumEdges-1) existCount=0;
 						else existCount++;
-						if(edgeServerCount==NumEdgeServers-1) edgeServerCount=0;
-						else edgeServerCount++;
 						//}else{//クラウドから取得 クラウドエッジ合わせてランダムの場合に使用
 						//	ClientNode->VideoRequestsID[j] = existCount;
 						//	existCount=0;
