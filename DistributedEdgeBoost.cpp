@@ -617,6 +617,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	EdgeEdgeNumSaving = 0;
 	EdgeEdgeNumReceiving = 0;
 	PredictCloudPowerConsumption = 0;
+	PredictEdgePowerConsumption = 0;
 	for(i=0; i<NumCloudServers; i++){
 		CloudEdgeNumSending += CloudNode.NumSending[i];
 		CloudServerAccessNum[i] = CloudNode.NumSending[i];
@@ -1235,6 +1236,7 @@ bool IsStoreHotCache(struct clientnode* ClientNode, int RequestPieceID) {//store
 	bool ReserveStore = true;
 
 	//if(ClientNode->VideoSaveFlag[RequestPieceID] == -1) return false;
+	if(InitialStoreFlag) return false;
 
 	for(int i=0;i<NumEdgeServers;i++){
 		CurrentNumSaving += ConnectedEdgeNode->NumSaving[i];
@@ -2924,7 +2926,6 @@ void InitializeClientNodes() {
 			ConnectedEdgeCounter++;
 		}
 	}
-	InitialStoreFlag = false;
 }
 
 void Simulate() {
@@ -2994,8 +2995,8 @@ void EvaluateLambda() {
 	NumEdges = 8;//8
 	NumVideos = 100;//900Gb 112.5GB
 	NumPrePieces = 0;
-	NumEdgeServers = 1;//Edge内のサーバの数
-	NumCloudServers = 1;//Cloud内のサーバの数
+	NumEdgeServers = 18;//Edge内のサーバの数
+	NumCloudServers = 18;//Cloud内のサーバの数
 	alpha=0;//ResponseTime
 	beta=1;//PowerConsumption
 
