@@ -217,6 +217,8 @@ double FirstSegmentMaxDelayTime = 0;
 bool RandomFlag = false;
 int NumEdgeServers;
 int NumCloudServers;
+int PredictAddEdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
+int PredictAddCloudServerAccessNum[MAXNUMSERVERS];
 
 int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 
@@ -594,6 +596,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	int CloudServerAccessNum[MAXNUMSERVERS];
 	int EdgeTotalAccessNum[MAXNUMEDGENODES];
 	int EdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
+	int TempPredictAddEdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
+	int TempPredictAddCloudServerAccessNum[MAXNUMSERVERS];
 	double minCost=100;
 	int index=-1;
 	int serverIndex=-1;
@@ -620,9 +624,10 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	EdgeEdgeNumReceiving = 0;
 	PredictCloudPowerConsumption = 0;
 	PredictEdgePowerConsumption = 0;
-	for(i=0; i<NumCloudServers; i++){
+	for(i=0; i<NumCloudServers; i++) {
 		CloudEdgeNumSending += CloudNode.NumSending[i];
 		CloudServerAccessNum[i] = CloudNode.NumSending[i];
+		TempPredictAddCloudServerAccessNum[i] = 0;
 		if(CloudServerAccessNum[i]>16) {
 			CPUOverFlag = 1;
 			CloudServerAccessNum[i] = 16;
@@ -643,6 +648,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			EdgeEdgeNumSending += EdgeNodes[i].NumSending[j];
 			EdgeClientNumSending += EdgeNodes[i].NumClientSending[j];
 			EdgeServerAccessNum[i][j] = EdgeNodes[i].NumClientSending[j] + EdgeNodes[i].NumSaving[j] + EdgeNodes[i].NumSending[j];
+			TempPredictAddEdgeServerAccessNum[i][j] = 0;
 			if(EdgeServerAccessNum[i][j]>16) {
 				CPUOverFlag = 1;
 				EdgeServerAccessNum[i][j] = 16;
@@ -680,13 +686,17 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	FirstSegmentAverageDelayTime = 0;
 
 	for(i=0; i<NumEdgeServers; i++){
-		if(MinConnectedServerCost>IncreaseEdgePowerConsumption[ClientNode->ConnectedEdgeID][i][EdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]]){
-			MinConnectedServerCost = IncreaseEdgePowerConsumption[ClientNode->ConnectedEdgeID][i][EdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]];
+		if(MinConnectedServerCost>IncreaseEdgePowerConsumption[ClientNode->ConnectedEdgeID][i][EdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]+PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]]){
+			MinConnectedServerCost = IncreaseEdgePowerConsumption[ClientNode->ConnectedEdgeID][i][EdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]+PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][i]];
 			ConnectedServerIndex = i;
 		}
 	}
 	ClientNode->ConnectedServerID = ConnectedServerIndex;
-	if(numOfExsistPieceID == NumPieces) return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
+	if(numOfExsistPieceID == NumPieces){
+		 return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
+	}else{
+		PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][ConnectedServerIndex]+=1;
+	}
 
 	for(i=0;i<NumPieces; i++){
 		for(int j=0;j<=NumEdges;j++){
@@ -761,8 +771,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			EdgeEdgeNumReceiving = 0;
 			PredictCloudPowerConsumption = 0;
 			for(i=0; i<NumCloudServers; i++){
-				if( MinPowerConsumption >= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]] ) MinPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]];
-				if( MaxPowerConsumption <= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]] ) MaxPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]];
+				if( MinPowerConsumption >= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]] ) MinPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]];
+				if( MaxPowerConsumption <= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]] ) MaxPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]];
 			}
 
 			//Cloud
@@ -772,8 +782,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			//Edge
 			for(i=0; i< NumEdges;i++){
 				for(j=0; j<NumEdgeServers; j++){
-					if( MinPowerConsumption >= IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]] ) MinPowerConsumption = IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]];
-					if( MaxPowerConsumption <= IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]] ) MaxPowerConsumption = IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]];
+					if( MinPowerConsumption >= IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]] ) MinPowerConsumption = IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]];
+					if( MaxPowerConsumption <= IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]] ) MaxPowerConsumption = IncreaseEdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]];
 				}
 
 				if( MinResponseTime >= (PieceSize*8/(EdgeNodes[i].EdgeEdgeBandwidth/(EdgeTotalAccessNum[i] + 1))) ) MinResponseTime = PieceSize*8/(EdgeNodes[i].EdgeEdgeBandwidth/(EdgeTotalAccessNum[i] + 1));
@@ -795,8 +805,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 				tempBeta = 0;
 			}
 			if(tempAlpha==1){
-				tempAlpha=0.99999;
-				tempBeta=0.00001;
+				tempAlpha=0.999;
+				tempBeta=0.001;
 			}
 
 			for(k=0; k<NumEdges+1; k++) {
@@ -804,7 +814,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 					if(k!=NumEdges){
 						for(l=0;l<NumEdgeServers;l++){
 							PredictEdgeBandwidth = EdgeNodes[k].EdgeEdgeBandwidth/(EdgeTotalAccessNum[k]+1);
-							cost = tempAlpha * (PieceSize*8 / (PredictEdgeBandwidth) - MinResponseTime) / MaxMinResponseTime + tempBeta * (IncreaseEdgePowerConsumption[k][l][EdgeServerAccessNum[k][l]] - MinPowerConsumption) / MaxMinPowerConsumption;
+							cost = tempAlpha * (PieceSize*8 / (PredictEdgeBandwidth) - MinResponseTime) / MaxMinResponseTime + tempBeta * (IncreaseEdgePowerConsumption[k][l][EdgeServerAccessNum[k][l]+PredictAddEdgeServerAccessNum[k][l]] - MinPowerConsumption) / MaxMinPowerConsumption;
 							if(minCost>cost){
 								minCost=cost;
 								index=k;
@@ -814,7 +824,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 					}else{
 						for(l=0;l<NumCloudServers;l++){
 							PredictCloudBandwidth = CloudNode.CloudEdgeBandwidth/(CloudTotalAccessNum+1);
-							cost = tempAlpha * (PieceSize*8 / (PredictCloudBandwidth) - MinResponseTime) / MaxMinResponseTime + tempBeta * (IncreaseCloudPowerConsumption[l][CloudServerAccessNum[l]] - MinPowerConsumption) / MaxMinPowerConsumption;
+							cost = tempAlpha * (PieceSize*8 / (PredictCloudBandwidth) - MinResponseTime) / MaxMinResponseTime + tempBeta * (IncreaseCloudPowerConsumption[l][CloudServerAccessNum[l]+PredictAddCloudServerAccessNum[l]] - MinPowerConsumption) / MaxMinPowerConsumption;
 							if(minCost>cost){
 								if(j==0) EdgeOrCloudFlag = -1;//最初クラウドから取得
 								minCost=cost;
@@ -824,11 +834,26 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						}
 						ClientNode->VideoRequestsID[j] = index;
 						ClientNode->ServerID[j] = serverIndex;
+						if(j!=0){
+							if(ClientNode->VideoRequestsID[j-1]!=index || ClientNode->ServerID[j-1]!=ServerIndex){
+								if(index==NumEdges) TempPredictAddCloudServerAccessNum[serverIndex]+=1;
+								else TempPredictServerAddCloudServerAccessNum[index][serverIndex]+=1;
+							} 
+						}
 						minCost=100;
 					}
 				}
 			}
 		}
+	}
+	for(i=0;i<NumEdges;i++){
+		for(j=0;j<NumEdgeServers;j++) {
+			PredictServerAddEdgeServerAccessNum[i][j] += TempPredictServerAddEdgeServerAccessNum[i][j];
+		}
+	}
+
+	for(i=0;i<NumCloudServers;i++){
+		PredictServerAddCloudServerAccessNum[i] += TempPredictServerAddCloudServerAccessNum[i];
 	}
 	//CompareStoreOrNot(ClientNode, whichNode);
 	return EdgeOrCloudFlag;//-1はcloud 1はedgeから最初のsegmentを取得
@@ -2740,6 +2765,7 @@ void InitializeCloudNode(double CloudEdgeBandwidth) {
 	for(int i=0;i<NumCloudServers;i++){
 		CloudNode.NumPreviousSending[i] = 0;
 		CloudNode.NumSending[i] = 0;
+		PredictAddCloudServerAccessNum[i];
 	}
 
 	for(int i=0; i<NumEdges; i++){
@@ -2787,6 +2813,7 @@ void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
 			EdgeNodes[i].NumSending[j] = 0;
 			EdgeNodes[i].NumPreviousClientSending[j] = 0;
 			EdgeNodes[i].NumClientSending[j] = 0;
+			PredictAddEdgeServerAccessNum[i][j] = 0;
 		}
 		EdgeNodes[i].HotCacheStart = 0;//-1
 		EdgeNodes[i].HotCacheEnd = HotCacheNumPieces-1;//-1
@@ -2832,23 +2859,23 @@ void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
 
 	for(i = 0 ; i < NumEdges; i++){//初期からエッジに動画を保存
 		k = EdgeNodes[i].StartVideoID;
-		l = 1;
-		if(i!=NumEdges-1) n =  EdgeNodes[i+1].StartVideoID;
+		l = 0;
+		/*if(i!=NumEdges-1) n =  EdgeNodes[i+1].StartVideoID;//最初のセグメントを初期で保存
 		else n = NumVideos;
 		for (m = k; m<n; m++){
 			EdgeNodes[i].HotCache[m-k].PieceID = 0;
 			EdgeNodes[i].HotCache[m-k].VideoID = m;
 			EdgeNodes[i].HotCache[m-k].Voted = 0;
 			CloudServer.ExsistPiece[i][m-k][0] = 1;
-		}
-		for (j = m-k; j < HotCacheNumPieces; j++) {
+		}*/
+		for (j = 0; j < HotCacheNumPieces; j++) {//j=m-k
 				EdgeNodes[i].HotCache[j].PieceID = l;
 				EdgeNodes[i].HotCache[j].VideoID = k;
 				EdgeNodes[i].HotCache[j].Voted = 0;
 				CloudServer.ExsistPiece[i][k][l] = 1;
 				if(l==NumPieces-1){
 					k+=1;
-					l=0;
+					l=-1;
 				}
 				l+=1;
 		}
@@ -2898,7 +2925,7 @@ void InitializeClientNodes() {
 	//人気はEdge毎。上位割当個数分を持つとする。それ以下は割当個数分ずつ+1へ。
 	ConnectedEdgeCounter = 0;
 	CalculateZipfVideo();
-	InitialStoreFlag = true;
+	InitialStoreFlag = false;//trueにすると保存しない
 	for (i=0; i < NumClients; i++) {
 		ClientNodes[i].ID = i;
 		ClientNodes[i].State = OFFSTATE;
