@@ -2766,7 +2766,7 @@ void InitializeCloudNode(double CloudEdgeBandwidth) {
 }
 
 void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
-	int i, j, k, l, StartVideoID, NumVideosEachEdge, NumEdgesOneMoreVideo;
+	int i, j, k, l, m, n, StartVideoID, NumVideosEachEdge, NumEdgesOneMoreVideo;
 
 	if (MAXNUMEDGENODES < NumEdges)
 		printf("Exceed MAXNUMEDGENODES\n");
@@ -2832,15 +2832,23 @@ void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
 
 	for(i = 0 ; i < NumEdges; i++){//初期からエッジに動画を保存
 		k = EdgeNodes[i].StartVideoID;
-		l = 0;
-		for (j = 0; j < HotCacheNumPieces; j++) {
+		l = 1;
+		if(i!=NumEdges-1) n =  EdgeNodes[i+1].StartVideoID;
+		else n = NumVideos;
+		for (m = k; m<n; m++){
+			EdgeNodes[i].HotCache[m-k].PieceID = 0;
+			EdgeNodes[i].HotCache[m-k].VideoID = m;
+			EdgeNodes[i].HotCache[m-k].Voted = 0;
+			CloudServer.ExsistPiece[i][m-k][0] = 1;
+		}
+		for (j = m-k; j < HotCacheNumPieces; j++) {
 				EdgeNodes[i].HotCache[j].PieceID = l;
 				EdgeNodes[i].HotCache[j].VideoID = k;
 				EdgeNodes[i].HotCache[j].Voted = 0;
 				CloudServer.ExsistPiece[i][k][l] = 1;
 				if(l==NumPieces-1){
 					k+=1;
-					l=-1;
+					l=0;
 				}
 				l+=1;
 		}
@@ -3020,7 +3028,7 @@ void EvaluateLambda() {
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.1) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.3; j <= Duration/SegmentTime*NumVideos/NumEdges*0.3; j+=Duration/SegmentTime*NumVideos/NumEdges*0.1) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
