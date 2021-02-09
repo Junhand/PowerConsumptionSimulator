@@ -219,6 +219,8 @@ int NumEdgeServers;
 int NumCloudServers;
 int PredictAddEdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
 int PredictAddCloudServerAccessNum[MAXNUMSERVERS];
+int edgeServerCount[MAXNUMEDGENODES];
+int cloudServerCount;
 
 int whichNode[MAXNUMPIECES][MAXNUMEDGENODES+1];
 
@@ -578,8 +580,6 @@ void ClientFinishReception(double EventTime, struct clientnode* ClientNode) {//c
 int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int VideoID, int PieceID) {
 	
 	int existCount = 0;
-	int edgeServerCount[MAXNUMEDGENODES];
-	int cloudServerCount = 0;
 	int EdgeOrCloudFlag = 1;
 	int CPUOverFlag = 0;
 	int CloudEdgeNumSending,EdgeEdgeNumSending,EdgeClientNumSending,EdgeEdgeNumSaving,EdgeEdgeNumReceiving;
@@ -598,6 +598,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	int EdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
 	int TempPredictAddEdgeServerAccessNum[MAXNUMEDGENODES][MAXNUMSERVERS];
 	int TempPredictAddCloudServerAccessNum[MAXNUMSERVERS];
+	int UseRandomEdgeServer[MAXNUMEDGENODES];
+	int UseRandomCloudServer;
 	double minCost=100;
 	int index=-1;
 	int serverIndex=-1;
@@ -720,8 +722,9 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 
 	if(RandomFlag){//各pieceの取得場所決定(ランダム)
 		for(i=0; i<NumEdges;i++){
-			edgeServerCount[i] = 0;
+			UseRandomEdgeServer[i] = 0;
 		}
+		UseRandomCloudServer = 0;
 		for(j=0; j<NumPieces; j++){
 			if(whichNode[j][ClientNode->ConnectedEdgeID] != 1){
 				while(1){
@@ -729,8 +732,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						//if(existCount!=NumEdges){//他のエッジから取得 クラウドエッジ合わせてランダムの場合に使用
 						ClientNode->VideoRequestsID[j] = existCount;
 						ClientNode->ServerID[j] = edgeServerCount[existCount];
-						if(edgeServerCount[existCount]==NumEdgeServers-1) edgeServerCount[existCount]=0;
-						else edgeServerCount[existCount]++;
+						UseRandomEdgeServer[existCount] = 1;
+
 						if(existCount==NumEdges-1) existCount=0;
 						else existCount++;
 						//}else{//クラウドから取得 クラウドエッジ合わせてランダムの場合に使用
@@ -746,13 +749,23 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						if(j==0) EdgeOrCloudFlag = -1;//最初クラウドから取得&& existCount==NumEdges クラウドエッジ合わせてランダムの場合に使用
 						ClientNode->VideoRequestsID[j] = NumEdges;
 						ClientNode->ServerID[j] = cloudServerCount;
-						if(cloudServerCount==NumCloudServers-1) cloudServerCount=0;
-						else cloudServerCount++;
+						UseRandomCloudServer = 1;
 						break;
 					}
 				}
-			}
+			}			
 			edgeCount = 0;
+		}
+
+		for(i=0;i<NumEdges;i++){
+			if(UseRandomEdgeServer[i]!=0){
+				if(edgeServerCount[i]==NumEdgeServers-1) edgeServerCount[i]=0;
+				else edgeServerCount[i]++;
+			}
+		}
+		if(UseRandomCloudServer!=0){
+			if(cloudServerCount==NumCloudServers-1) cloudServerCount=0;
+			else cloudServerCount++;
 		}
 		//CompareStoreOrNot(ClientNode, whichNode);
 		return EdgeOrCloudFlag;
@@ -2805,6 +2818,7 @@ void InitializeCloudNode(double CloudEdgeBandwidth) {
 	CloudServer.CloudPowerConsumption=0;
 	CloudServer.CloudResponceTime=0;
 	CloudServer.CloudPreviousTime=0;
+	cloudServerCount=0;
 }
 
 void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
@@ -2855,6 +2869,7 @@ void InitializeEdgeNodes(double EdgeEdgeBandwidth, double EdgeClientBandwidth) {
 		EdgeNodes[i].EdgeClientSendClient = NULL;
 		EdgeNodes[i].EdgeClientSendPieceID = -1;
 		EdgeNodes[i].EdgeClientSendVideoID = -1;
+		edgeServerCount[i] = 0;
 	}
 
 	//映像IDは若いEdgeIDから順番
@@ -3071,7 +3086,7 @@ void EvaluateLambda() {
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.3; j <= Duration/SegmentTime*NumVideos/NumEdges*0.3; j+=Duration/SegmentTime*NumVideos/NumEdges*0.1) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.9; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
