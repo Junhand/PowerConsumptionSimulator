@@ -693,7 +693,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	}
 	ClientNode->ConnectedServerID = ConnectedServerIndex;
 	PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][ConnectedServerIndex]+=1;
-	
+
 	if(numOfExsistPieceID == NumPieces) return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
 	
 
@@ -2178,6 +2178,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 					ClientNode->PreviousTime = EventTime;
 					ClientNode->RemainingDataSize = PieceSize * 8;
 					ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
+					if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -= 1;
 					EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 
 				}
@@ -2203,6 +2204,7 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 					ClientNode->PreviousTime = EventTime;
 					ClientNode->RemainingDataSize = PieceSize * 8;
 					CloudNode.NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
+					if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddCloudServerAccessNum[ClientNode->ServerID[ReceivePieceID]] -= 1;
 					CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 				}
 			}
@@ -2351,6 +2353,7 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
+				if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -= 1;
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
@@ -2375,6 +2378,7 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				CloudNode.NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
+				PredictAddCloudServerAccessNum[ClientNode->ServerID[ReceivePieceID]] -=1;
 				CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
@@ -2546,6 +2550,7 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
+				PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -=1;
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
