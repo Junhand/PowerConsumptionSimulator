@@ -8,11 +8,11 @@
 #define LOG
 #define NSIM 1
 #define MAXNUMEDGENODES 10
-#define MAXNUMCLIENTNODES 1000 //2147483647/96 22369621くらいまでいける
-#define MAXNUMVIDEOS 101
-#define MAXNUMSERVERS 20
-#define MAXHOTCACHE 1260000
-#define MAXNUMPIECES 210000
+#define MAXNUMCLIENTNODES 1101 //2147483647/96 22369621くらいまでいける
+#define MAXNUMVIDEOS 500
+#define MAXNUMSERVERS 50
+#define MAXHOTCACHE 8800000
+#define MAXNUMPIECES 200000
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -787,6 +787,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			for(i=0; i<NumCloudServers; i++){
 				CloudServerAccessNum[i] += PredictAddCloudServerAccessNum[i];
 				if(CloudServerAccessNum[i]>16) CloudServerAccessNum[i] = 16;
+				 
 			}
 			for(i=0; i<NumCloudServers; i++){
 				if( MinPowerConsumption >= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]] ) MinPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]];
@@ -801,7 +802,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			for(i=0; i<NumEdges; i++){
 				for(j=0; j<NumEdgeServers; j++) {
 					EdgeServerAccessNum[i][j] += PredictAddEdgeServerAccessNum[i][j];
-					if(EdgeServerAccessNum[i][j]>16) EdgeServerAccessNum[i][j] = 16;
+					if(EdgeServerAccessNum[i][j]>16) EdgeServerAccessNum[i][j] = 16;	
+					
 				}
 			}
 			for(i=0; i< NumEdges;i++){
@@ -860,8 +862,8 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 						ClientNode->ServerID[j] = serverIndex;
 						if(j!=0){
 							if(ClientNode->VideoRequestsID[j-1]!=index || ClientNode->ServerID[j-1]!=serverIndex){
-								if(index==NumEdges) TempPredictAddCloudServerAccessNum[serverIndex]+=1;
-								else TempPredictAddEdgeServerAccessNum[index][serverIndex]+=1;
+								if(index==NumEdges) TempPredictAddCloudServerAccessNum[serverIndex]=1;
+								else TempPredictAddEdgeServerAccessNum[index][serverIndex]=1;
 							} 
 						}
 						minCost=100;
@@ -2191,7 +2193,6 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 					ClientNode->PreviousTime = EventTime;
 					ClientNode->RemainingDataSize = PieceSize * 8;
 					ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
-					if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -= 1;
 					EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 
 				}
@@ -2217,7 +2218,6 @@ void ExecuteEdgeClientFinishEvent(double EventTime, struct clientnode* ClientNod
 					ClientNode->PreviousTime = EventTime;
 					ClientNode->RemainingDataSize = PieceSize * 8;
 					CloudNode.NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
-					if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddCloudServerAccessNum[ClientNode->ServerID[ReceivePieceID]] -= 1;
 					CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 				}
 			}
@@ -2366,7 +2366,6 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
-				if(ClientNode->VideoRequestsID[ReceivePieceID] != ClientNode->VideoRequestsID[ReceivedPieceID]) PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -= 1;
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
@@ -2391,7 +2390,6 @@ void ExecuteEdgeEdgeFinishEvent(double EventTime, struct clientnode* ClientNode,
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				CloudNode.NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
-				PredictAddCloudServerAccessNum[ClientNode->ServerID[ReceivePieceID]] -=1;
 				CloudEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
@@ -2563,7 +2561,6 @@ void ExecuteCloudEdgeFinishEvent(double EventTime, struct clientnode* ClientNode
 				ClientNode->PreviousTime = EventTime;
 				ClientNode->RemainingDataSize = PieceSize * 8;
 				ClientNode->VideoEdgeNode->NumSending[ClientNode->ServerID[ReceivePieceID]] += 1;
-				PredictAddEdgeServerAccessNum[ClientNode->VideoRequestsID[ReceivePieceID]][ClientNode->ServerID[ReceivePieceID]] -=1;
 				EdgeEdgeRequest(EventTime, ClientNode, ReceivePieceID, Store);
 			}
 		}
@@ -3047,27 +3044,27 @@ void EvaluateLambda() {
 	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =  1000000000.0;//1Gbps
-	EdgeEdgeBandwidth =   1000000000.0;//1Gbps
-	EdgeClientBandwidth = 1000000000.0;//1Gbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
+	CloudEdgeBandwidth =  5000000000.0;//Min1Gbps
+	EdgeEdgeBandwidth =   5000000000.0;//Min1Gbps
+	EdgeClientBandwidth = 500000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 1000000;//48 * 60.0 * 60.0;//視聴時間 30*60
+	Duration = 900000;//48 * 60.0 * 60.0;//視聴時間 30*60
 	SegmentTime = 5.0;
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 5000;//24*60*60
+	SimulationTime = 9000;//24*60*60
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
 	NumEdges = 8;//8
-	NumVideos = 100;//900Gb 112.5GB
+	NumVideos = 500;//900Gb 112.5GB
 	NumPrePieces = 0;
-	NumEdgeServers = 18;//Edge内のサーバの数
-	NumCloudServers = 18;//Cloud内のサーバの数
+	NumEdgeServers = 50;//Edge内のサーバの数
+	NumCloudServers = 50;//Cloud内のサーバの数
 	alpha=0;//ResponseTime
 	beta=1;//PowerConsumption
 
@@ -3086,7 +3083,7 @@ void EvaluateLambda() {
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.9; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.3; j <= Duration/SegmentTime*NumVideos/NumEdges*0.7; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
