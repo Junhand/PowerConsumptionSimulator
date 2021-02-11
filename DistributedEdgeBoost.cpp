@@ -11,8 +11,8 @@
 #define MAXNUMCLIENTNODES 1002 //2147483647/96 22369621くらいまでいける
 #define MAXNUMVIDEOS 100
 #define MAXNUMSERVERS 50
-#define MAXHOTCACHE 1750001
-#define MAXNUMPIECES 280001
+#define MAXHOTCACHE 1400001
+#define MAXNUMPIECES 200001
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -3036,19 +3036,19 @@ void EvaluateLambda() {
 	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =  1000000000.0;//Min1Gbps
+	CloudEdgeBandwidth =  500000000.0;//Min1Gbps
 	EdgeEdgeBandwidth =   1000000000.0;//Min1Gbps
 	EdgeClientBandwidth = 1000000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 1400000;//6000000
+	Duration = 2000000;//6000000
 	SegmentTime = 10;//50
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 7000;//24*60*60//30000
+	SimulationTime = 10000;//24*60*60//30000
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
@@ -3065,7 +3065,7 @@ void EvaluateLambda() {
 
 	sprintf(ResultFileName, "ResultLambda.dat");
 	ServerResultFile = myfopen(ResultFileName, "w");
-	for (i = 1.0; i <= 1.5; i+=0.5) {
+	for (i = 0; i <= 1.5; i+=0.5) {
 		alpha = i;
 		beta = 1-i;
 		if(i==0.5){
@@ -3075,7 +3075,7 @@ void EvaluateLambda() {
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.5; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
