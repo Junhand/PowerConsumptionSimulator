@@ -8,11 +8,11 @@
 #define LOG
 #define NSIM 1
 #define MAXNUMEDGENODES 10
-#define MAXNUMCLIENTNODES 1101 //2147483647/96 22369621くらいまでいける
-#define MAXNUMVIDEOS 500
+#define MAXNUMCLIENTNODES 1002 //2147483647/96 22369621くらいまでいける
+#define MAXNUMVIDEOS 100
 #define MAXNUMSERVERS 50
-#define MAXHOTCACHE 8800000
-#define MAXNUMPIECES 200000
+#define MAXHOTCACHE 840001
+#define MAXNUMPIECES 120001
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -699,24 +699,15 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	if(numOfExsistPieceID == NumPieces) return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
 	
 
-	for(i=0;i<NumPieces; i++){
-		for(int j=0;j<=NumEdges;j++){
-			whichNode[i][j]=0;
-		}
-	}
-
-	for(i=0; i<NumPieces; i++){//自エッジにpieceがあるかどうか
-		if(CloudServer.ExsistPiece[ClientNode->ConnectedEdgeID][ClientNode->VideoID][i] == 1){
-			ClientNode->VideoRequestsID[i] = ClientNode->ConnectedEdgeID;
-			whichNode[i][ClientNode->ConnectedEdgeID] = 1;
-		}
-		else{//他エッジにpieceがあるかどうか
-			for (int ReceiveEdgeNodeID = 0; ReceiveEdgeNodeID < NumEdges; ReceiveEdgeNodeID++) {
-				if(CloudServer.ExsistPiece[ReceiveEdgeNodeID][ClientNode->VideoID][i] == 1){
-					whichNode[i][ReceiveEdgeNodeID]= 1;
-				}
+	for(i=0; i<NumPieces; i++){//エッジにpieceがあるかどうか
+		for (int ReceiveEdgeNodeID = 0; ReceiveEdgeNodeID < NumEdges; ReceiveEdgeNodeID++) {
+			if(CloudServer.ExsistPiece[ReceiveEdgeNodeID][ClientNode->VideoID][i] == 1){
+				whichNode[i][ReceiveEdgeNodeID]= 1;
+			}else{
+				whichNode[i][ReceiveEdgeNodeID]= 0;
 			}
 		}
+		
 		whichNode[i][NumEdges] = 1;//cloud has all pieces
 	}
 
@@ -1338,6 +1329,7 @@ bool IsStoreHotCache(struct clientnode* ClientNode, int RequestPieceID) {//store
 					ReserveStore = false;
 				}
 			}
+			if(CurrentNumDelete>CurrentNumSaving) break;
 		} while (CurrentHotCachePosition != HotCacheEnd);
 		
 		if (CurrentNumDelete>CurrentNumSaving){
@@ -3044,24 +3036,24 @@ void EvaluateLambda() {
 	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =  5000000000.0;//Min1Gbps
-	EdgeEdgeBandwidth =   5000000000.0;//Min1Gbps
-	EdgeClientBandwidth = 500000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
+	CloudEdgeBandwidth =  1000000000.0;//Min1Gbps
+	EdgeEdgeBandwidth =   1000000000.0;//Min1Gbps
+	EdgeClientBandwidth = 1000000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 900000;//48 * 60.0 * 60.0;//視聴時間 30*60
-	SegmentTime = 5.0;
+	Duration = 1200000;//6000000
+	SegmentTime = 10;//50
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 9000;//24*60*60
+	SimulationTime = 6000;//24*60*60//30000
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
 	NumEdges = 8;//8
-	NumVideos = 500;//900Gb 112.5GB
+	NumVideos = 100;//900Gb 112.5GB
 	NumPrePieces = 0;
 	NumEdgeServers = 50;//Edge内のサーバの数
 	NumCloudServers = 50;//Cloud内のサーバの数
@@ -3083,12 +3075,12 @@ void EvaluateLambda() {
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.3; j <= Duration/SegmentTime*NumVideos/NumEdges*0.7; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.3; j <= Duration/SegmentTime*NumVideos/NumEdges*0.3; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
 			//fprintf(ResultFile, "%lf\t\n", AverageArrivalInterval);
-			for (l = 10; l <= 10; l++) {//3
+			for (l = 10; l <= 10; l++) {//50
 				if (l == 0) AverageArrivalInterval = 12;//12
 				else AverageArrivalInterval = l ;//j
 				
