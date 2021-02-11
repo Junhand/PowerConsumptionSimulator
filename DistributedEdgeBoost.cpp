@@ -8,11 +8,11 @@
 #define LOG
 #define NSIM 1
 #define MAXNUMEDGENODES 10
-#define MAXNUMCLIENTNODES 1002 //2147483647/96 22369621くらいまでいける
-#define MAXNUMVIDEOS 100
-#define MAXNUMSERVERS 50
-#define MAXHOTCACHE 1400001
-#define MAXNUMPIECES 200001
+#define MAXNUMCLIENTNODES 502 //2147483647/96 22369621くらいまでいける
+#define MAXNUMVIDEOS 1001
+#define MAXNUMSERVERS 11
+#define MAXHOTCACHE 1570001
+#define MAXNUMPIECES 25001
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -581,6 +581,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	
 	int existCount = 0;
 	int EdgeOrCloudFlag = 1;
+	int CPUOverCount = 0;
 	int CPUOverFlag = 0;
 	int CloudEdgeNumSending,EdgeEdgeNumSending,EdgeClientNumSending,EdgeEdgeNumSaving,EdgeEdgeNumReceiving;
 	double PredictEdgePowerConsumption;
@@ -630,29 +631,38 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 		CloudEdgeNumSending += CloudNode.NumSending[i];
 		CloudServerAccessNum[i] = CloudNode.NumSending[i];
 		TempPredictAddCloudServerAccessNum[i] = 0;
-		if(CloudServerAccessNum[i]>16) {
-			CPUOverFlag = 1;
+		if(CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]>=16) {
+			CPUOverCount += 1;
+		}
+		if(CloudServerAccessNum[i]>16){
+			CPUOverFlag += 1;
 			CloudServerAccessNum[i] = 16;
 		}
 		PredictCloudPowerConsumption += CloudPowerConsumption[i][CloudServerAccessNum[i]];
 	}
+	if(CPUOverCount==NumCloudServers){
+		for(i=0;i<NumCloudServers;i++) PredictAddCloudServerAccessNum[i]=0;
+	}
+
 	CloudTotalAccessNum = CloudEdgeNumSending;
 	if(CloudEdgeNumSending==0) CloudEdgeNumSending=1;
 	fprintf(ServerResultFile, "%.0lf\t%d\t%d\t%.2lf\t%d\t%.2lf\t%.2lf\t",AverageArrivalInterval, ClientNode->ID, CloudTotalAccessNum, CloudNode.CloudEdgeBandwidth/CloudEdgeNumSending, CPUOverFlag, CloudServer.CloudPowerConsumption, PredictCloudPowerConsumption);
 	TotalPowerConsumption = PredictCloudPowerConsumption;
 
-	if(CPUOverFlag==1){
-		int a=0;
-	}
-	CPUOverFlag = 0;
+
 	for(i=0; i< NumEdges; i++){
+		CPUOverFlag = 0;
+		CPUOverCount = 0;
 		for(j=0; j<NumEdgeServers; j++){
 			EdgeEdgeNumSending += EdgeNodes[i].NumSending[j];
 			EdgeClientNumSending += EdgeNodes[i].NumClientSending[j];
 			EdgeServerAccessNum[i][j] = EdgeNodes[i].NumClientSending[j] + EdgeNodes[i].NumSaving[j] + EdgeNodes[i].NumSending[j];
 			TempPredictAddEdgeServerAccessNum[i][j] = 0;
-			if(EdgeServerAccessNum[i][j]>16) {
-				CPUOverFlag = 1;
+			if(EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]>=16) {
+				CPUOverCount += 1;
+			}
+			if(EdgeServerAccessNum[i][j]>16){
+				CPUOverFlag += 1;
 				EdgeServerAccessNum[i][j] = 16;
 			}
 			EdgeEdgeNumSaving += EdgeNodes[i].NumSaving[j];
@@ -661,6 +671,9 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			if(EdgePowerConsumption[i][j][EdgeServerAccessNum[i][j]]>10000){
 				int h=0;
 			}
+		}
+		if(CPUOverCount==NumEdgeServers){
+			for(j=0;j<NumEdgeServers;j++) PredictAddEdgeServerAccessNum[i][j]=0;
 		}
 		EdgeTotalAccessNum[i] = EdgeEdgeNumSending;
 		if(EdgeEdgeNumSending==0) EdgeEdgeNumSending=1;
@@ -776,9 +789,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 
 			//Cloud
 			for(i=0; i<NumCloudServers; i++){
-				CloudServerAccessNum[i] += PredictAddCloudServerAccessNum[i];
-				if(CloudServerAccessNum[i]>16) CloudServerAccessNum[i] = 16;
-				 
+				if(CloudServerAccessNum[i]+PredictAddCloudServerAccessNum[i]>16) CloudServerAccessNum[i] = 16;
 			}
 			for(i=0; i<NumCloudServers; i++){
 				if( MinPowerConsumption >= IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]] ) MinPowerConsumption = IncreaseCloudPowerConsumption[i][CloudServerAccessNum[i]];
@@ -792,9 +803,7 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 			//Edge
 			for(i=0; i<NumEdges; i++){
 				for(j=0; j<NumEdgeServers; j++) {
-					EdgeServerAccessNum[i][j] += PredictAddEdgeServerAccessNum[i][j];
-					if(EdgeServerAccessNum[i][j]>16) EdgeServerAccessNum[i][j] = 16;	
-					
+					if(EdgeServerAccessNum[i][j]+PredictAddEdgeServerAccessNum[i][j]>16) EdgeServerAccessNum[i][j] = 16;
 				}
 			}
 			for(i=0; i< NumEdges;i++){
@@ -3036,27 +3045,27 @@ void EvaluateLambda() {
 	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =  500000000.0;//Min1Gbps
+	CloudEdgeBandwidth =  1000000000.0;//Min1Gbps
 	EdgeEdgeBandwidth =   1000000000.0;//Min1Gbps
 	EdgeClientBandwidth = 1000000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
-	BitRate = 5000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 2000000;//6000000
+	BitRate = 20000000.0;//128,256,384,512,640,768,896,1024    5M
+	Duration = 100000;//6000000
 	SegmentTime = 10;//50
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 10000;//24*60*60//30000
+	SimulationTime = 2000;//24*60*60//30000
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
 	NumEdges = 8;//8
-	NumVideos = 100;//900Gb 112.5GB
+	NumVideos = 1000;//900Gb 112.5GB
 	NumPrePieces = 0;
-	NumEdgeServers = 15;//Edge内のサーバの数
-	NumCloudServers = 15;//Cloud内のサーバの数
+	NumEdgeServers = 10;//Edge内のサーバの数
+	NumCloudServers = 10;//Cloud内のサーバの数
 	alpha=0;//ResponseTime
 	beta=1;//PowerConsumption
 
