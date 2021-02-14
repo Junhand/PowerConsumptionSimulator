@@ -11,8 +11,8 @@
 #define MAXNUMCLIENTNODES 502 //2147483647/96 22369621くらいまでいける
 #define MAXNUMVIDEOS 1001
 #define MAXNUMSERVERS 11
-#define MAXHOTCACHE 1570001
-#define MAXNUMPIECES 25001
+#define MAXHOTCACHE 5001
+#define MAXNUMPIECES 40001
 #define CPUCORE 16
 
 #define RETRYCYCLE(a) (8.0*PieceSize/Nodes[a].AverageInBand)
@@ -707,7 +707,12 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 		}
 	}
 	ClientNode->ConnectedServerID = ConnectedServerIndex;
-	PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][ConnectedServerIndex]+=1;
+	//PredictAddEdgeServerAccessNum[ClientNode->ConnectedEdgeID][ConnectedServerIndex]+=1;
+	if(RandomFlag){
+		ClientNode->ConnectedServerID = edgeServerCount[ClientNode->ConnectedEdgeID];
+		if(edgeServerCount[ClientNode->ConnectedEdgeID]==NumEdgeServers-1) edgeServerCount[ClientNode->ConnectedEdgeID]=0;
+		else edgeServerCount[ClientNode->ConnectedEdgeID]++;
+	}
 
 	if(numOfExsistPieceID == NumPieces) return EdgeOrCloudFlag;//エッジに全てのpieceがあるとき
 	
@@ -874,12 +879,12 @@ int CloudServerRequest(double EventTime, struct clientnode* ClientNode, int Vide
 	}
 	for(i=0;i<NumEdges;i++){
 		for(j=0;j<NumEdgeServers;j++) {
-			PredictAddEdgeServerAccessNum[i][j] += TempPredictAddEdgeServerAccessNum[i][j];
+			//PredictAddEdgeServerAccessNum[i][j] += TempPredictAddEdgeServerAccessNum[i][j];
 		}
 	}
 
 	for(i=0;i<NumCloudServers;i++){
-		PredictAddCloudServerAccessNum[i] += TempPredictAddCloudServerAccessNum[i];
+		//PredictAddCloudServerAccessNum[i] += TempPredictAddCloudServerAccessNum[i];
 	}
 	//CompareStoreOrNot(ClientNode, whichNode);
 	return EdgeOrCloudFlag;//-1はcloud 1はedgeから最初のsegmentを取得
@@ -3045,19 +3050,19 @@ void EvaluateLambda() {
 	double TotalPowerConsumption=0;
 
 	RandType = 0;//0:一定、1:指数
-	CloudEdgeBandwidth =  1000000000.0;//Min1Gbps
+	CloudEdgeBandwidth =  2000000000.0;//Min1Gbps
 	EdgeEdgeBandwidth =   1000000000.0;//Min1Gbps
 	EdgeClientBandwidth = 1000000000.0;//Max 500Mbps 非同期通信のために帯域幅が上2つと同じ場合は少し早くすると良い。しなければバッファがないためクラウドエッジ・エッジクラウドで同期通信のようになってしまう
 
 	AverageArrivalInterval = 99999.0;//下で変えてる
 	BitRate = 20000000.0;//128,256,384,512,640,768,896,1024    5M
-	Duration = 100000;//6000000
+	Duration = 400000;//6000000
 	SegmentTime = 10;//50
 	PieceSize = (int)(SegmentTime*BitRate / 8);//5秒
 	SegmentSize = (int)(SegmentTime*BitRate / 8);//使わない
 	//PieceSize = (int) 18800;//188バイト*100 TSパケットとして送信
 	NumPrePieces = 0;//下で変えてる  360piece
-	SimulationTime = 2000;//24*60*60//30000
+	SimulationTime = 4000;//24*60*60//30000
 	BandwidthWaver = 0.0;
 	HotCacheNumPieces = 15000000000 / PieceSize;//100MB 1GB　おそらく合計8GB? 320pieces = 320*5*bitRate bit = 1GByte
 	//HotCacheNumPieces = 0;
@@ -3077,14 +3082,12 @@ void EvaluateLambda() {
 	for (i = 0; i <= 1.5; i+=0.5) {
 		alpha = i;
 		beta = 1-i;
-		if(i==0.5){
-			alpha = 0.1;
-			beta = 0.9;
-		}
+		
+
 		if(i==1.5) RandomFlag = true;
 		fprintf(ResultFile, "SimulationTime:%.0lf\talpha%.2f\tbeta%.2f\n", SimulationTime,alpha,beta);
 		n = 2;//行数
-		for (j = Duration/SegmentTime*NumVideos/NumEdges*0.1; j <= Duration/SegmentTime*NumVideos/NumEdges*0.5; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
+		for (j = Duration/SegmentTime*NumVideos/NumEdges*0; j <= Duration/SegmentTime*NumVideos/NumEdges*0; j+=Duration/SegmentTime*NumVideos/NumEdges*0.2) {//15
 			HotCacheNumPieces = j; //NumPrePieces = (l + 1) * 10;
 			
 			MinAveInterrupt = 1.0e32;
@@ -3098,7 +3101,7 @@ void EvaluateLambda() {
 				MaxInterrupt = 0.0;
 				MinInterrupt = 1.0e32;
 				for (k = 0; k < NSIM; k++) {
-					Seed = k;
+					Seed = 0;
 					Initialize();
 					InitializeCloudNode(CloudEdgeBandwidth);
 					InitializeEdgeNodes(EdgeEdgeBandwidth, EdgeClientBandwidth);
